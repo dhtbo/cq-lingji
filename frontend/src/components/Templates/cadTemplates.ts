@@ -210,4 +210,81 @@ with BuildPart() as part:
     Hole(radius=3.0, depth=4.0)
 `,
   },
+  {
+    id: "pillow_block",
+    name: "🧱 立式轴承座 (Pillow Block - 官方教程3)",
+    description: "build123d 官方教程 3：经典机械构件，顶部圆弧拱顶、轴承通孔与两侧地脚螺栓安装孔",
+    code: `from build123d import *
+
+height = 50.0
+width = 100.0
+thickness = 20.0
+bore_radius = 15.0
+
+with BuildPart() as part:
+    # 基础承重板体
+    Box(width, thickness, height)
+    # 顶部圆弧拱形倒圆
+    fillet(part.edges().filter_by(Axis.Y).sort_by(Axis.Z)[-2:], radius=thickness / 2)
+    # 中心轴承贯通孔
+    Hole(radius=bore_radius, depth=thickness)
+    # 两侧地脚固定螺栓孔 (GridLocations)
+    with GridLocations(width - 25.0, 0, 2, 1):
+        Hole(radius=4.5, depth=height)
+`,
+  },
+  {
+    id: "swept_pipe",
+    name: "🚰 空间扫掠管道 (Swept Pipe - 官方案例8)",
+    description: "build123d 官方入门案例 8：BuildLine 空间三维导引路径与 BuildSketch 环形截面沿路径扫掠 (sweep)",
+    code: `from build123d import *
+
+with BuildPart() as part:
+    # 1. 空间导引折线路径
+    with BuildLine() as path:
+        Line((0, 0, 0), (0, 0, 30))
+        Line((0, 0, 30), (0, 30, 60))
+    # 2. 中空环形截面并沿路径扫掠
+    with BuildSketch(Plane.XY) as sk:
+        Circle(radius=6.0)
+        Circle(radius=4.5, mode=Mode.SUBTRACT)
+    sweep(path=path.line)
+`,
+  },
+  {
+    id: "counterbore_plate",
+    name: "🔩 沉头螺钉安装板 (Counterbore - 官方案例11)",
+    description: "build123d 官方入门案例 11：带外边倒角、凸台与沉头孔 (CounterBoreHole) 的工业安装底板",
+    code: `from build123d import *
+
+with BuildPart() as part:
+    # 1. 主安装底板与四角圆角
+    Box(80.0, 60.0, 10.0)
+    fillet(part.edges().filter_by(Axis.Z), radius=6.0)
+    # 2. 四角沉头螺栓孔 (GridLocations 阵列)
+    with GridLocations(56.0, 38.0, 2, 2):
+        CounterBoreHole(radius=2.25, counter_bore_radius=4.5, counter_bore_depth=4.0)
+    # 3. 中心凸起定位台与减重孔
+    with Locations((0, 0, 5.0)):
+        Cylinder(radius=16.0, height=5.0)
+        Hole(radius=10.0, depth=15.0)
+`,
+  },
+  {
+    id: "mirroring_bracket",
+    name: "🪞 镜像对称支架 (Mirroring - 官方案例12)",
+    description: "build123d 官方入门案例 12：构建单侧几何实体后通过 mirror(about=Plane.YZ) 实现工业对称拓扑镜像",
+    code: `from build123d import *
+
+with BuildPart() as part:
+    # 1. 构建单侧特征
+    with Locations((15.0, 0, 0)):
+        Box(30.0, 20.0, 15.0)
+        Hole(radius=5.0, depth=15.0)
+    # 2. 沿 YZ 平面镜像生成对称半区
+    mirror(about=Plane.YZ)
+    # 3. 中心强化连结梁
+    Box(10.0, 24.0, 10.0)
+`,
+  },
 ];

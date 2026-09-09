@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "CadQuery Blockly Studio - 视觉化 CAD 创意编程工作台",
-  description: "面向青少年与初学者的 CadQuery 可视化积木与代码联动三维建模平台",
+  title: "灵机 3D 积木工坊 (build123d Blockly Studio) - 视觉化 CAD 创意编程工作台",
+  description: "基于 build123d 现代几何引擎的可视化积木与 Python 代码双向无损联动三维建模平台",
 };
 
 export default function RootLayout({
