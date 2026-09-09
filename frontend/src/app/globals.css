@@ -1,0 +1,179 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import 'three-cad-viewer/css';
+
+html,
+body {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: #0d1117;
+  color: #c9d1d9;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  user-select: none;
+}
+
+/* 隐藏部分滚动条或定制美化 (黑夜模式默认) */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #161b22;
+}
+::-webkit-scrollbar-thumb {
+  background: #30363d;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #484f58;
+}
+
+/* 白天模式滚动条 */
+.theme-light ::-webkit-scrollbar-track {
+  background: #f6f8fa;
+}
+.theme-light ::-webkit-scrollbar-thumb {
+  background: #d0d7de;
+}
+.theme-light ::-webkit-scrollbar-thumb:hover {
+  background: #afb8c1;
+}
+
+/* Blockly 界面样式覆盖与美化 (黑夜模式) */
+.theme-dark .blocklyToolboxDiv,
+.blocklyToolboxDiv {
+  background-color: #161b22 !important;
+  border-right: 1px solid #30363d !important;
+  color: #e6edf3 !important;
+}
+
+.theme-dark .blocklyTreeLabel,
+.blocklyTreeLabel {
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  color: #c9d1d9 !important;
+}
+
+.theme-dark .blocklyTreeRow:hover,
+.blocklyTreeRow:hover {
+  background-color: #21262d !important;
+}
+
+.theme-dark .blocklyTreeSelected,
+.blocklyTreeSelected {
+  background-color: #1f6feb22 !important;
+}
+
+.theme-dark .blocklyMainBackground,
+.blocklyMainBackground {
+  stroke-width: 0 !important;
+  fill: #0d1117 !important;
+}
+
+/* Blockly 界面样式覆盖与美化 (白天模式) */
+.theme-light .blocklyToolboxDiv {
+  background-color: #ffffff !important;
+  border-right: 1px solid #d0d7de !important;
+  color: #1f2937 !important;
+}
+
+.theme-light .blocklyTreeLabel {
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  color: #1f2937 !important;
+}
+
+.theme-light .blocklyTreeRow:hover {
+  background-color: #f3f4f6 !important;
+}
+
+.theme-light .blocklyTreeSelected {
+  background-color: rgba(56, 139, 253, 0.12) !important;
+}
+
+.theme-light .blocklyMainBackground {
+  stroke-width: 0 !important;
+  fill: #f8fafc !important;
+}
+
+.theme-light .blocklyFlyoutBackground {
+  fill: #ffffff !important;
+  fill-opacity: 0.98 !important;
+}
+
+.theme-light .blocklyScrollbarHandle {
+  fill: #cbd5e1 !important;
+}
+
+/* 彻底消除 Blockly 积木盒子 (Flyout) 关闭后右侧垂直滚动条/边框线残留缺陷 */
+.blocklyFlyout[style*="display: none"] + .blocklyFlyoutScrollbar,
+.blocklyFlyout[style*="display:none"] + .blocklyFlyoutScrollbar,
+.blocklyFlyout[style*="display: none"] ~ .blocklyFlyoutScrollbar,
+.blocklyFlyout[style*="display:none"] ~ .blocklyFlyoutScrollbar,
+.injectionDiv:not(:has(.blocklyFlyout:not([style*="display: none"]))) .blocklyFlyoutScrollbar {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+}
+
+/* 分割面板手柄样式 */
+.resize-handle {
+  width: 4px;
+  background-color: #21262d;
+  transition: background-color 0.2s ease;
+  position: relative;
+  z-index: 20;
+}
+.theme-light .resize-handle {
+  background-color: #e1e4e8;
+}
+.resize-handle:hover,
+.resize-handle[data-resize-handle-active],
+.theme-light .resize-handle:hover,
+.theme-light .resize-handle[data-resize-handle-active] {
+  background-color: #388bfd;
+}
+
+/* three-cad-viewer 容器样式适配与视口中心化优化 */
+.cad-viewer-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* 默认隐藏挤压 3D 画布的内置侧栏，让画布 100% 居中 */
+.cad-viewer-container:not(.show-tree) .tcv_cad_tree {
+  display: none !important;
+}
+
+.cad-viewer-container .tcv_cad_body {
+  width: 100% !important;
+  height: 100% !important;
+  flex: 1 1 100% !important;
+}
+
+.cad-viewer-container .tcv_cad_view {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.cad-viewer-container canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  outline: none;
+}
+
+/* 隐藏 three-cad-viewer 内部旧式状态弹窗与导航栏，全面由 UI/UX Pro Max 悬浮 HUD 接管 */
+.tcv_cad_info,
+.tcv_cad_info_glass,
+.tcv_cad_navigation,
+.tcv_tcv_info_table {
+  display: none !important;
+}
