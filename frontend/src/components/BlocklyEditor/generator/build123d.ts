@@ -18,13 +18,16 @@ function getModeParam(mode: string): string {
 export function registerBuild123dGenerator() {
   if (generatorRegistered) return;
 
+  // 设置 Python 标准 4 空格缩进
+  pythonGenerator.INDENT = "    ";
+
   // ==================== 1. 建造者上下文容器 ====================
 
   pythonGenerator.forBlock["b3d_build_part"] = function (block: Blockly.Block) {
     const plane = block.getFieldValue("PLANE") || "XY";
     const planeParam = plane === "XY" ? "" : `Plane.${plane}`;
     const branch = pythonGenerator.statementToCode(block, "DO") || "    pass\n";
-    return `with BuildPart(${planeParam}) as part:\n${branch}\n`;
+    return `with BuildPart(${planeParam}) as part:\n${branch}`;
   };
 
   pythonGenerator.forBlock["b3d_build_sketch"] = function (block: Blockly.Block) {
@@ -38,12 +41,22 @@ export function registerBuild123dGenerator() {
       planeArg = `Plane.${plane}`;
     }
     const branch = pythonGenerator.statementToCode(block, "DO") || "    pass\n";
-    return `with BuildSketch(${planeArg}) as sk:\n${branch}\n`;
+    return `with BuildSketch(${planeArg}) as sk:\n${branch}`;
   };
 
   pythonGenerator.forBlock["b3d_build_line"] = function (block: Blockly.Block) {
     const branch = pythonGenerator.statementToCode(block, "DO") || "    pass\n";
-    return `with BuildLine() as ln:\n${branch}\n`;
+    return `with BuildLine() as ln:\n${branch}`;
+  };
+
+  pythonGenerator.forBlock["b3d_line"] = function (block: Blockly.Block) {
+    const start = block.getFieldValue("START_PT") || "(0, 0)";
+    const end = block.getFieldValue("END_PT") || "(10, 0)";
+    return `Line(${start}, ${end})\n`;
+  };
+
+  pythonGenerator.forBlock["b3d_make_face"] = function () {
+    return `make_face()\n`;
   };
 
   // ==================== 2. 空间定位与阵列 ====================
@@ -161,7 +174,10 @@ export function registerBuild123dGenerator() {
   pythonGenerator.forBlock["b3d_sketch_polyline"] = function (block: Blockly.Block) {
     const pts = block.getFieldValue("POINTS") || "[(0,0), (10,5), (20,0)]";
     const close = block.getFieldValue("CLOSE") === "TRUE" || block.getFieldValue("CLOSE") === true;
-    return `Polyline(${pts}, close=${close ? "True" : "False"})\n`;
+    if (close) {
+      return `Polyline(${pts}, close=True)\n`;
+    }
+    return `Polyline(${pts})\n`;
   };
 
   pythonGenerator.forBlock["b3d_sketch_slot"] = function (block: Blockly.Block) {
@@ -329,8 +345,7 @@ export function registerBuild123dGenerator() {
 
   pythonGenerator.forBlock["cq_sketch_polyline"] = function (block: Blockly.Block) {
     const pts = block.getFieldValue("POINTS") || "[(0,0), (20,0), (20,15), (0,15)]";
-    const close = block.getFieldValue("CLOSE") === "TRUE" || block.getFieldValue("CLOSE") === true;
-    return `    with BuildSketch() as sk:\n        Polyline(${pts}, close=${close ? "True" : "False"})\n`;
+    return `    with BuildSketch() as sk:\n        Polygon(${pts})\n`;
   };
 
   pythonGenerator.forBlock["cq_sketch_slot"] = function (block: Blockly.Block) {

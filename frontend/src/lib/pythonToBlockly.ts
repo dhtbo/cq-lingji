@@ -116,6 +116,18 @@ export function parseBuild123dCode(code: string): ParsedBlockDef[] {
       continue;
     }
 
+    // 3.5 with BuildLine(...) 路径建造者容器
+    if (/with\s+BuildLine\s*\((.*?)\)/i.test(trimmed)) {
+      const block: ParsedBlockDef = {
+        type: "b3d_build_line",
+        fields: {},
+        children: [],
+      };
+      addBlock(block);
+      stack.push({ indent, block });
+      continue;
+    }
+
     // 4. with Locations(...) 定位容器
     if (/with\s+Locations\s*\(\s*\(\s*([-\d.]+)\s*,\s*([-\d.]+)(?:\s*,\s*([-\d.]+))?\s*\)\s*\)/i.test(trimmed)) {
       const m = trimmed.match(/with\s+Locations\s*\(\s*\(\s*([-\d.]+)\s*,\s*([-\d.]+)(?:\s*,\s*([-\d.]+))?\s*\)\s*\)/i)!;
@@ -313,14 +325,37 @@ export function parseBuild123dCode(code: string): ParsedBlockDef[] {
       continue;
     }
 
+    // 16.1 生成草图截面: make_face()
+    if (/make_face\s*\(\s*\)/i.test(trimmed)) {
+      addBlock({
+        type: "b3d_make_face",
+        fields: {},
+      });
+      continue;
+    }
+
+    // 16.2 路径线段: Line
+    if (/Line\s*\(\s*(\(.*?\))\s*,\s*(\(.*?\))\s*\)/i.test(trimmed)) {
+      const lineMatch = trimmed.match(/Line\s*\(\s*(\(.*?\))\s*,\s*(\(.*?\))\s*\)/i);
+      addBlock({
+        type: "b3d_line",
+        fields: {
+          START_PT: lineMatch ? lineMatch[1] : "(0, 0)",
+          END_PT: lineMatch ? lineMatch[2] : "(10, 0)",
+        },
+      });
+      continue;
+    }
+
+    // 16.3 连续折线: Polyline
     if (/Polyline\s*\((.*?)\)/i.test(trimmed)) {
       const ptsMatch = trimmed.match(/\[\s*\(.*?\)\]/);
-      const closeMatch = /close\s*=\s*(True|False)/i.exec(trimmed);
+      const hasCloseTrue = /close\s*=\s*True/i.test(trimmed);
       addBlock({
         type: "b3d_sketch_polyline",
         fields: {
           POINTS: ptsMatch ? ptsMatch[0] : "[(0,0), (10,5), (20,0)]",
-          CLOSE: closeMatch && closeMatch[1].toLowerCase() === "false" ? "FALSE" : "TRUE",
+          CLOSE: hasCloseTrue ? "TRUE" : "FALSE",
         },
       });
       continue;

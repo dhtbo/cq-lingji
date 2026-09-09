@@ -87,6 +87,14 @@ export const BUILD123D_TOOLBOX = {
         },
         {
           kind: "block",
+          type: "b3d_line",
+        },
+        {
+          kind: "block",
+          type: "b3d_make_face",
+        },
+        {
+          kind: "block",
           type: "b3d_sketch_slot",
         },
         {

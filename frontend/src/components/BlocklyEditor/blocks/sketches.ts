@@ -304,4 +304,32 @@ export function registerSketchBlocks() {
       this.setTooltip("build123d Text：在草图上生成矢量文字轮廓，可拉伸出立体凸字或凹字");
     },
   };
+
+  // b3d Line
+  Blockly.Blocks["b3d_line"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("📏 线段 Line")
+        .appendField("起点:")
+        .appendField(new Blockly.FieldTextInput("(0, 0)"), "START_PT")
+        .appendField("终点:")
+        .appendField(new Blockly.FieldTextInput("(10, 0)"), "END_PT");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.SKETCH);
+      this.setTooltip("build123d Line：两点之间的直线段，放置于 BuildLine 中");
+    },
+  };
+
+  // b3d make_face
+  Blockly.Blocks["b3d_make_face"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("✨ 生成截面 make_face()");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.SKETCH);
+      this.setTooltip("build123d make_face()：将 BuildLine 中构建的闭合线框转化为 BuildSketch 2D 截面");
+    },
+  };
 }
