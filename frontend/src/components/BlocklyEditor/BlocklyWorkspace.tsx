@@ -3,9 +3,9 @@
 import React, { useEffect, useRef } from "react";
 import * as Blockly from "blockly";
 import * as zhHans from "blockly/msg/zh-hans";
-import { registerAllCadQueryBlocks } from "./blocks";
-import { registerCadQueryGenerator, generateCadQueryPython } from "./generator/cadquery";
-import { CADQUERY_TOOLBOX } from "./toolbox";
+import { registerAllBuild123dBlocks } from "./blocks";
+import { registerBuild123dGenerator, workspaceToBuild123d } from "./generator/build123d";
+import { BUILD123D_TOOLBOX } from "./toolbox";
 import { createCadQueryZelosTheme } from "./theme";
 
 interface BlocklyWorkspaceProps {
@@ -29,15 +29,15 @@ export const BlocklyWorkspace: React.FC<BlocklyWorkspaceProps> = ({
     Blockly.setLocale(zhHans as any);
 
     // 2. 注册自定义积木与生成器
-    registerAllCadQueryBlocks();
-    registerCadQueryGenerator();
+    registerAllBuild123dBlocks();
+    registerBuild123dGenerator();
 
     // 3. 创建 Zelos Scratch 风格主题 (根据 colorMode)
     const zelosTheme = createCadQueryZelosTheme(colorMode);
 
     // 4. 挂载注入 Blockly 工作区
     const workspace = Blockly.inject(blocklyDiv.current, {
-      toolbox: CADQUERY_TOOLBOX,
+      toolbox: BUILD123D_TOOLBOX,
       theme: zelosTheme,
       renderer: "zelos", // Scratch 3.0 风格圆角曲率渲染器
       sounds: false, // 禁用默认云端音效，避免无外网时连接超时
@@ -72,48 +72,50 @@ export const BlocklyWorkspace: React.FC<BlocklyWorkspaceProps> = ({
       workspaceRefOut.current = workspace;
     }
 
-    // 5. 插入默认新手建模积木组合 (如带孔圆柱法兰底座)
-    const initWp = workspace.newBlock("cq_init_workplane");
-    initWp.setFieldValue("XY", "PLANE");
-    initWp.initSvg();
-    initWp.render();
-    initWp.moveTo(new Blockly.utils.Coordinate(40, 40));
+    // 5. 插入默认新手 build123d 经典建模积木组合
+    const buildPart = workspace.newBlock("b3d_build_part");
+    buildPart.setFieldValue("XY", "PLANE");
+    buildPart.initSvg();
+    buildPart.render();
+    buildPart.moveTo(new Blockly.utils.Coordinate(40, 40));
 
-    const sketchCircle = workspace.newBlock("cq_sketch_circle");
-    sketchCircle.setFieldValue(20, "RADIUS");
-    sketchCircle.initSvg();
-    sketchCircle.render();
+    const boxOp = workspace.newBlock("b3d_box");
+    boxOp.setFieldValue(20, "LENGTH");
+    boxOp.setFieldValue(20, "WIDTH");
+    boxOp.setFieldValue(10, "HEIGHT");
+    boxOp.setFieldValue("ADD", "MODE");
+    boxOp.initSvg();
+    boxOp.render();
 
-    const extrudeOp = workspace.newBlock("cq_op_extrude");
-    extrudeOp.setFieldValue(12, "DISTANCE");
-    extrudeOp.initSvg();
-    extrudeOp.render();
+    const cylOp = workspace.newBlock("b3d_cylinder");
+    cylOp.setFieldValue(6, "RADIUS");
+    cylOp.setFieldValue(18, "HEIGHT");
+    cylOp.setFieldValue("ADD", "MODE");
+    cylOp.initSvg();
+    cylOp.render();
 
-    const selFace = workspace.newBlock("cq_sel_face");
-    selFace.setFieldValue(">Z", "SELECTOR");
-    selFace.initSvg();
-    selFace.render();
+    const filletOp = workspace.newBlock("b3d_fillet");
+    filletOp.setFieldValue(1.5, "RADIUS");
+    filletOp.setFieldValue("ALL", "TARGET");
+    filletOp.initSvg();
+    filletOp.render();
 
-    const holeOp = workspace.newBlock("cq_op_hole");
-    holeOp.setFieldValue(8, "DIAMETER");
-    holeOp.setFieldValue(12, "DEPTH");
-    holeOp.initSvg();
-    holeOp.render();
-
-    // 连接积木堆
-    initWp.nextConnection?.connect(sketchCircle.previousConnection);
-    sketchCircle.nextConnection?.connect(extrudeOp.previousConnection);
-    extrudeOp.nextConnection?.connect(selFace.previousConnection);
-    selFace.nextConnection?.connect(holeOp.previousConnection);
+    // 连接积木堆到 BuildPart 的内部槽位
+    const doConnection = buildPart.getInput("DO")?.connection;
+    if (doConnection) {
+      doConnection.connect(boxOp.previousConnection);
+      boxOp.nextConnection?.connect(cylOp.previousConnection);
+      cylOp.nextConnection?.connect(filletOp.previousConnection);
+    }
 
     // 初始生成代码
-    const initialCode = generateCadQueryPython(workspace);
+    const initialCode = workspaceToBuild123d(workspace);
     onCodeChange(initialCode);
 
     // 6. 监听积木变更事件 (忽略非内容性纯UI滚动缩放事件)
     const changeListener = (e: Blockly.Events.Abstract) => {
       if (e.isUiEvent || e.type === Blockly.Events.VIEWPORT_CHANGE) return;
-      const code = generateCadQueryPython(workspace);
+      const code = workspaceToBuild123d(workspace);
       onCodeChange(code);
     };
 

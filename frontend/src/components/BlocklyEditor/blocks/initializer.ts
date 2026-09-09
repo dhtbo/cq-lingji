@@ -75,4 +75,68 @@ export function registerInitializerBlocks() {
       this.setTooltip("引用已有的模型实体变量 part，作为后续链式操作的目标对象");
     },
   };
+
+  // ==================== build123d 建造者容器积木 ====================
+
+  // 5. 零件建造容器: with BuildPart() as part:
+  Blockly.Blocks["b3d_build_part"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("🏗️ 零件建造者 BuildPart")
+        .appendField("基准面:")
+        .appendField(
+          new Blockly.FieldDropdown([
+            ["XY 平面 (俯视)", "XY"],
+            ["XZ 平面 (正视)", "XZ"],
+            ["YZ 平面 (侧视)", "YZ"],
+          ]),
+          "PLANE"
+        );
+      this.appendStatementInput("DO")
+        .appendField("特征序列:");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.BUILDER);
+      this.setTooltip("build123d 核心建造者容器：用于构建 3D 实体模型，所有内部特征将自动组合");
+    },
+  };
+
+  // 6. 草图建造容器: with BuildSketch() as sk:
+  Blockly.Blocks["b3d_build_sketch"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("✏️ 草图建造者 BuildSketch")
+        .appendField("附着于:")
+        .appendField(
+          new Blockly.FieldDropdown([
+            ["XY 平面 (基准)", "XY"],
+            ["XZ 平面 (正视)", "XZ"],
+            ["YZ 平面 (侧视)", "YZ"],
+            ["零件顶面 (Faces().top)", "TOP_FACE"],
+            ["零件底面 (Faces().bottom)", "BOTTOM_FACE"],
+          ]),
+          "PLANE"
+        );
+      this.appendStatementInput("DO")
+        .appendField("草图图元:");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.BUILDER);
+      this.setTooltip("build123d 2D 草图容器：在指定平面或实体表面绘制 2D 轮廓，供拉伸/旋转使用");
+    },
+  };
+
+  // 7. 路径建造容器: with BuildLine() as ln:
+  Blockly.Blocks["b3d_build_line"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("📏 路径构造者 BuildLine");
+      this.appendStatementInput("DO")
+        .appendField("路径图元:");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.BUILDER);
+      this.setTooltip("build123d 1D 路径容器：用于构建扫掠路径或放样导轨");
+    },
+  };
 }

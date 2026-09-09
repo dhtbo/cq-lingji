@@ -156,4 +156,152 @@ export function registerSketchBlocks() {
       this.setTooltip("向传入的 CadQuery 目标追加 .polygon(nSides, diameter)");
     },
   };
+
+  // ==================== build123d 2D 草图图元积木 ====================
+
+  const B3D_SKETCH_MODE_OPTIONS: [string, string][] = [
+    ["加胶并集 Mode.ADD", "ADD"],
+    ["减胶挖孔 Mode.SUBTRACT", "SUBTRACT"],
+    ["相交保留 Mode.INTERSECT", "INTERSECT"],
+  ];
+
+  // b3d Rectangle
+  Blockly.Blocks["b3d_sketch_rect"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("✏️ 草图矩形 Rectangle")
+        .appendField("宽 X:")
+        .appendField(new Blockly.FieldNumber(20, 0.1), "WIDTH")
+        .appendField("高 Y:")
+        .appendField(new Blockly.FieldNumber(20, 0.1), "HEIGHT")
+        .appendField("模式:")
+        .appendField(new Blockly.FieldDropdown(B3D_SKETCH_MODE_OPTIONS), "MODE");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.SKETCH);
+      this.setTooltip("build123d Rectangle 草图图元");
+    },
+  };
+
+  // b3d Circle
+  Blockly.Blocks["b3d_sketch_circle"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("✏️ 草图圆形 Circle")
+        .appendField("半径 R:")
+        .appendField(new Blockly.FieldNumber(10, 0.1), "RADIUS")
+        .appendField("模式:")
+        .appendField(new Blockly.FieldDropdown(B3D_SKETCH_MODE_OPTIONS), "MODE");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.SKETCH);
+      this.setTooltip("build123d Circle 草图图元，支持 ADD 或 SUBTRACT (挖孔)");
+    },
+  };
+
+  // b3d RegularPolygon
+  Blockly.Blocks["b3d_sketch_regular_polygon"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("✏️ 正多边形 RegularPolygon")
+        .appendField("半径 R:")
+        .appendField(new Blockly.FieldNumber(10, 0.1), "RADIUS")
+        .appendField("边数:")
+        .appendField(new Blockly.FieldNumber(6, 3, 32, 1), "SIDES")
+        .appendField("模式:")
+        .appendField(new Blockly.FieldDropdown(B3D_SKETCH_MODE_OPTIONS), "MODE");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.SKETCH);
+      this.setTooltip("build123d RegularPolygon 正多边形草图");
+    },
+  };
+
+  // b3d Polygon
+  Blockly.Blocks["b3d_sketch_polygon"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("✏️ 自由多边形 Polygon")
+        .appendField("顶点列表:")
+        .appendField(new Blockly.FieldTextInput("[(0,0), (20,0), (20,15), (0,15)]"), "POINTS")
+        .appendField("模式:")
+        .appendField(new Blockly.FieldDropdown(B3D_SKETCH_MODE_OPTIONS), "MODE");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.SKETCH);
+      this.setTooltip("build123d Polygon：由顶点列表构成的任意多边形闭合草图面");
+    },
+  };
+
+  // b3d Polyline
+  Blockly.Blocks["b3d_sketch_polyline"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("✏️ 连续折线 Polyline")
+        .appendField("点序列:")
+        .appendField(new Blockly.FieldTextInput("[(0,0), (10,5), (20,0)]"), "POINTS")
+        .appendField("闭合:")
+        .appendField(new Blockly.FieldCheckbox("TRUE"), "CLOSE");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.SKETCH);
+      this.setTooltip("build123d Polyline：连续折线段草图");
+    },
+  };
+
+  // b3d Slot2D
+  Blockly.Blocks["b3d_sketch_slot"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("✏️ 机械腰形槽 Slot2D")
+        .appendField("槽长:")
+        .appendField(new Blockly.FieldNumber(30, 0.1), "LENGTH")
+        .appendField("槽宽:")
+        .appendField(new Blockly.FieldNumber(10, 0.1), "WIDTH")
+        .appendField("旋转角:")
+        .appendField(new Blockly.FieldNumber(0, -360, 360), "ROTATION")
+        .appendField("模式:")
+        .appendField(new Blockly.FieldDropdown(B3D_SKETCH_MODE_OPTIONS), "MODE");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.SKETCH);
+      this.setTooltip("build123d Slot2D：机械常用长圆腰形槽");
+    },
+  };
+
+  // b3d Ellipse
+  Blockly.Blocks["b3d_sketch_ellipse"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("✏️ 椭圆草图 Ellipse")
+        .appendField("半长轴 X:")
+        .appendField(new Blockly.FieldNumber(20, 0.1), "X_RADIUS")
+        .appendField("半短轴 Y:")
+        .appendField(new Blockly.FieldNumber(10, 0.1), "Y_RADIUS")
+        .appendField("模式:")
+        .appendField(new Blockly.FieldDropdown(B3D_SKETCH_MODE_OPTIONS), "MODE");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.SKETCH);
+      this.setTooltip("build123d Ellipse 椭圆草图");
+    },
+  };
+
+  // b3d Text
+  Blockly.Blocks["b3d_sketch_text"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("✏️ 刻字文本 Text")
+        .appendField("文本:")
+        .appendField(new Blockly.FieldTextInput("BUILD123D"), "TEXT")
+        .appendField("字号:")
+        .appendField(new Blockly.FieldNumber(12, 1), "FONT_SIZE")
+        .appendField("模式:")
+        .appendField(new Blockly.FieldDropdown(B3D_SKETCH_MODE_OPTIONS), "MODE");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.SKETCH);
+      this.setTooltip("build123d Text：在草图上生成矢量文字轮廓，可拉伸出立体凸字或凹字");
+    },
+  };
 }

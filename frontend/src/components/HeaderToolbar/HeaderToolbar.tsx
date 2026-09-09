@@ -43,6 +43,7 @@ interface HeaderToolbarProps {
   onExportStl: () => void;
   onExportStep: () => void;
   onDownloadPy?: () => void;
+  onDownloadCadQueryPy?: () => void;
   onExportProject?: () => void;
   onImportProject?: (file: File) => void;
   saveToastMsg?: string | null;
@@ -67,6 +68,7 @@ export const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
   onExportStl,
   onExportStep,
   onDownloadPy,
+  onDownloadCadQueryPy,
   onExportProject,
   onImportProject,
   saveToastMsg,
@@ -202,9 +204,24 @@ export const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
                   >
                     <span className="flex items-center gap-1.5">
                       <FileCode size={13} className="text-blue-600" />
-                      <span>下载 Python 脚本 (.py)</span>
+                      <span>下载 build123d 源码 (.py)</span>
                     </span>
-                    <span className="text-[10px] bg-blue-100 text-blue-700 px-1 rounded font-mono">Py</span>
+                    <span className="text-[10px] bg-blue-100 text-blue-700 px-1 rounded font-mono">B3D</span>
+                  </button>
+                )}
+                {onDownloadCadQueryPy && (
+                  <button
+                    onClick={() => {
+                      onDownloadCadQueryPy();
+                      setShowFileMenu(false);
+                    }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-amber-50 hover:text-amber-700 flex items-center justify-between"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <FileCode size={13} className="text-amber-600" />
+                      <span>导出为 CadQuery 脚本 (.py) [单向]</span>
+                    </span>
+                    <span className="text-[10px] bg-amber-100 text-amber-700 px-1 rounded font-mono">CQ</span>
                   </button>
                 )}
                 {onExportProject && (

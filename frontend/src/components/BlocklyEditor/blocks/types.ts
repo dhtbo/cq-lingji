@@ -1,13 +1,15 @@
 /**
- * Blockly CadQuery 积木常量与颜色体系
+ * Blockly build123d 积木常量与颜色体系
  */
 
 export const CATEGORY_COLORS = {
-  INITIALIZER: "#0891b2", // 青色 - 基准面与初始
-  SKETCH: "#2563eb",      // 蓝色 - 2D 草图
-  OPERATION_3D: "#7c3aed",// 紫色 - 3D 特征操作
-  TRANSFORM: "#059669",   // 绿色 - 选择与变换
-  MACRO: "#d97706",       // 琥珀色 - 教育宏与高级特征
+  BUILDER: "#0284c7",     // 浅蓝/深天蓝 - 建造者容器 (BuildPart, BuildSketch)
+  INITIALIZER: "#0891b2", // 青色 - 基准面与定位
+  SKETCH: "#2563eb",      // 蓝色 - 2D 草图图元
+  OPERATION_3D: "#7c3aed",// 紫色 - 3D 特征操作 (extrude, fillet, chamfer)
+  PRIMITIVE_3D: "#6366f1",// 靛蓝 - 3D 基础体 (Box, Cylinder, Sphere)
+  TRANSFORM: "#059669",   // 绿色 - 定位与阵列 (Locations, GridLocations)
+  MACRO: "#d97706",       // 琥珀色 - 教学宏与高级装配
   COMMENT: "#64748b",     // 石板灰 - 代码便签与注释
   LOGIC: "#3b82f6",       // 蓝色 - 逻辑判断
   MATH: "#8b5cf6",        // 紫色 - 数学运算
@@ -18,6 +20,7 @@ export const CATEGORY_COLORS = {
 
 export const CQ_TYPES = {
   CQ_OBJ: "CQ_OBJ",
+  B3D_OBJ: "B3D_OBJ",
   NUMBER: "Number",
   STRING: "String",
   PLANE: "PLANE",

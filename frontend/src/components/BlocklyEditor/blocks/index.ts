@@ -8,9 +8,9 @@ import { registerCommentBlocks } from "./comments";
 let initialized = false;
 
 /**
- * 注册所有自定义 CadQuery 积木
+ * 注册所有自定义 build123d / CadQuery 积木
  */
-export function registerAllCadQueryBlocks() {
+export function registerAllBuild123dBlocks() {
   if (initialized) return;
   registerInitializerBlocks();
   registerSketchBlocks();
@@ -20,3 +20,5 @@ export function registerAllCadQueryBlocks() {
   registerCommentBlocks();
   initialized = true;
 }
+
+export const registerAllCadQueryBlocks = registerAllBuild123dBlocks;

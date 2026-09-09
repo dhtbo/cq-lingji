@@ -11,7 +11,11 @@ from typing import Any, Dict, Optional
 from fastapi import FastAPI, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-import cadquery as cq
+try:
+    import cadquery as cq
+except Exception:
+    cq = None
+import build123d as b3d
 
 from backend.sandbox import execute_cq_sandboxed
 from backend.serializer import serialize_cad_object
@@ -21,12 +25,12 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
-logger = logging.getLogger("cadquery-studio-backend")
+logger = logging.getLogger("build123d-studio-backend")
 
 app = FastAPI(
-    title="CadQuery Blockly Studio API",
-    version="1.0.0",
-    description="面向青少年与初学者的 CadQuery 可视化教学与几何沙箱渲染引擎"
+    title="build123d Blockly Studio API",
+    version="2.0.0",
+    description="面向现代 3D 数字编程的 build123d 可视化教学与几何沙箱渲染引擎"
 )
 
 # 允许跨域请求
@@ -40,7 +44,7 @@ app.add_middleware(
 
 
 class RenderRequest(BaseModel):
-    code: str = Field(..., description="CadQuery Python 代码文本")
+    code: str = Field(..., description="build123d / CadQuery Python 代码文本")
     step: Optional[int] = Field(None, ge=1, description="特征时间旅行指定回放步骤号")
     tolerance: float = Field(0.01, ge=0.001, le=0.5, description="B-Rep 网格细分线性公差")
     angular_tolerance: float = Field(0.1, ge=0.01, le=1.0, description="B-Rep 网格细分角度公差")
@@ -49,7 +53,7 @@ class RenderRequest(BaseModel):
 
 
 class ExportRequest(BaseModel):
-    code: str = Field(..., description="CadQuery Python 代码文本")
+    code: str = Field(..., description="build123d / CadQuery Python 代码文本")
     filename: Optional[str] = Field(None, description="导出自定义文件名")
 
 
@@ -60,13 +64,16 @@ async def health_check() -> Dict[str, Any]:
     """
     return {
         "status": "healthy",
-        "service": "cadquery-blockly-backend",
-        "cadquery_version": cq.__version__,
+        "service": "build123d-blockly-backend",
+        "build123d_version": b3d.__version__,
+        "cadquery_version": cq.__version__ if cq is not None else "unavailable",
     }
 
 
+@app.post("/api/v1/render")
+@app.post("/api/v1/render/b3d")
 @app.post("/api/v1/render/cq")
-async def render_cadquery(req: RenderRequest):
+async def render_cad(req: RenderRequest):
     """
     执行 CadQuery 代码并转换为 three-cad-viewer 规范的 JSON 网格数据，支持分步特征时间旅行
     """
@@ -175,7 +182,16 @@ async def export_stl(req: ExportRequest):
         temp_path = tf.name
 
     try:
-        cq.exporters.export(part, temp_path, cq.exporters.ExportTypes.STL)
+        if cq is not None and isinstance(part, (cq.Workplane, cq.Assembly)):
+            cq.exporters.export(part, temp_path, cq.exporters.ExportTypes.STL)
+        else:
+            try:
+                b3d.export_stl(part, temp_path)
+            except Exception:
+                if cq is not None:
+                    cq.exporters.export(part, temp_path, cq.exporters.ExportTypes.STL)
+                else:
+                    raise
         with open(temp_path, "rb") as f:
             content = f.read()
     finally:
@@ -214,7 +230,17 @@ async def export_step(req: ExportRequest):
         temp_path = tf.name
 
     try:
-        cq.exporters.export(part, temp_path, cq.exporters.ExportTypes.STEP)
+        if cq is not None and isinstance(part, (cq.Workplane, cq.Assembly)):
+            cq.exporters.export(part, temp_path, cq.exporters.ExportTypes.STEP)
+        else:
+            try:
+                b3d.export_step(part, temp_path)
+            except Exception:
+                if cq is not None:
+                    cq.exporters.export(part, temp_path, cq.exporters.ExportTypes.STEP)
+                else:
+                    raise
+                cq.exporters.export(part, temp_path, cq.exporters.ExportTypes.STEP)
         with open(temp_path, "rb") as f:
             content = f.read()
     finally:

@@ -337,4 +337,307 @@ export function registerOperation3DBlocks() {
       this.setTooltip("在实体端面周向阵列切削辐射散热槽");
     },
   };
+
+  // ==================== build123d 3D 实体与特征积木 ====================
+
+  const B3D_MODE_OPTIONS: [string, string][] = [
+    ["加胶并集 Mode.ADD", "ADD"],
+    ["减胶差集 Mode.SUBTRACT", "SUBTRACT"],
+    ["相交保留 Mode.INTERSECT", "INTERSECT"],
+  ];
+
+  // b3d Box
+  Blockly.Blocks["b3d_box"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("🧱 实体立方体 Box")
+        .appendField("长 X:")
+        .appendField(new Blockly.FieldNumber(20, 0.1), "LENGTH")
+        .appendField("宽 Y:")
+        .appendField(new Blockly.FieldNumber(20, 0.1), "WIDTH")
+        .appendField("高 Z:")
+        .appendField(new Blockly.FieldNumber(10, 0.1), "HEIGHT")
+        .appendField("模式:")
+        .appendField(new Blockly.FieldDropdown(B3D_MODE_OPTIONS), "MODE");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.PRIMITIVE_3D);
+      this.setTooltip("build123d Box 实体，支持并集加胶、差集切削或交集");
+    },
+  };
+
+  // b3d Cylinder
+  Blockly.Blocks["b3d_cylinder"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("🥫 实体圆柱体 Cylinder")
+        .appendField("半径 R:")
+        .appendField(new Blockly.FieldNumber(10, 0.1), "RADIUS")
+        .appendField("高度 H:")
+        .appendField(new Blockly.FieldNumber(20, 0.1), "HEIGHT")
+        .appendField("模式:")
+        .appendField(new Blockly.FieldDropdown(B3D_MODE_OPTIONS), "MODE");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.PRIMITIVE_3D);
+      this.setTooltip("build123d Cylinder 实体");
+    },
+  };
+
+  // b3d Sphere
+  Blockly.Blocks["b3d_sphere"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("⚽ 实体球体 Sphere")
+        .appendField("半径 R:")
+        .appendField(new Blockly.FieldNumber(10, 0.1), "RADIUS")
+        .appendField("模式:")
+        .appendField(new Blockly.FieldDropdown(B3D_MODE_OPTIONS), "MODE");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.PRIMITIVE_3D);
+      this.setTooltip("build123d Sphere 球体实体");
+    },
+  };
+
+  // b3d Cone
+  Blockly.Blocks["b3d_cone"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("📐 实体圆锥体 Cone")
+        .appendField("底面半径 R1:")
+        .appendField(new Blockly.FieldNumber(15, 0), "R1")
+        .appendField("顶面半径 R2:")
+        .appendField(new Blockly.FieldNumber(5, 0), "R2")
+        .appendField("高度 H:")
+        .appendField(new Blockly.FieldNumber(20, 0.1), "HEIGHT")
+        .appendField("模式:")
+        .appendField(new Blockly.FieldDropdown(B3D_MODE_OPTIONS), "MODE");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.PRIMITIVE_3D);
+      this.setTooltip("build123d Cone 圆锥体或平台截锥实体");
+    },
+  };
+
+  // b3d Torus
+  Blockly.Blocks["b3d_torus"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("🍩 实体圆环体 Torus")
+        .appendField("主半径 R1:")
+        .appendField(new Blockly.FieldNumber(20, 0.1), "R1")
+        .appendField("截面半径 R2:")
+        .appendField(new Blockly.FieldNumber(5, 0.1), "R2")
+        .appendField("模式:")
+        .appendField(new Blockly.FieldDropdown(B3D_MODE_OPTIONS), "MODE");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.PRIMITIVE_3D);
+      this.setTooltip("build123d Torus 甜甜圈圆环实体");
+    },
+  };
+
+  // b3d Wedge
+  Blockly.Blocks["b3d_wedge"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("📐 实体楔形体 Wedge")
+        .appendField("dx:")
+        .appendField(new Blockly.FieldNumber(20, 0.1), "DX")
+        .appendField("dy:")
+        .appendField(new Blockly.FieldNumber(20, 0.1), "DY")
+        .appendField("dz:")
+        .appendField(new Blockly.FieldNumber(15, 0.1), "DZ")
+        .appendField("xmin:")
+        .appendField(new Blockly.FieldNumber(5), "XMIN")
+        .appendField("zmin:")
+        .appendField(new Blockly.FieldNumber(0), "ZMIN")
+        .appendField("xmax:")
+        .appendField(new Blockly.FieldNumber(15), "XMAX")
+        .appendField("zmax:")
+        .appendField(new Blockly.FieldNumber(10), "ZMAX")
+        .appendField("模式:")
+        .appendField(new Blockly.FieldDropdown(B3D_MODE_OPTIONS), "MODE");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.PRIMITIVE_3D);
+      this.setTooltip("build123d Wedge 斜角楔形实体");
+    },
+  };
+
+  // b3d extrude
+  Blockly.Blocks["b3d_extrude"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("📦 拉伸草图 extrude")
+        .appendField("高度:")
+        .appendField(new Blockly.FieldNumber(10, 0.1), "AMOUNT")
+        .appendField("模式:")
+        .appendField(new Blockly.FieldDropdown(B3D_MODE_OPTIONS), "MODE");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.OPERATION_3D);
+      this.setTooltip("build123d extrude：将 BuildSketch 中绘制的草图沿法线拉伸成体");
+    },
+  };
+
+  // b3d revolve
+  Blockly.Blocks["b3d_revolve"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("🔄 旋转草图 revolve")
+        .appendField("角度:")
+        .appendField(new Blockly.FieldNumber(360, 1, 360), "ANGLE")
+        .appendField("轴线:")
+        .appendField(
+          new Blockly.FieldDropdown([
+            ["Z 轴 Axis.Z", "Axis.Z"],
+            ["X 轴 Axis.X", "Axis.X"],
+            ["Y 轴 Axis.Y", "Axis.Y"],
+          ]),
+          "AXIS"
+        )
+        .appendField("模式:")
+        .appendField(new Blockly.FieldDropdown(B3D_MODE_OPTIONS), "MODE");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.OPERATION_3D);
+      this.setTooltip("build123d revolve：将草图绕空间轴线旋转成型回转体");
+    },
+  };
+
+  // b3d loft
+  Blockly.Blocks["b3d_loft"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("⛵ 放样成体 loft")
+        .appendField("模式:")
+        .appendField(new Blockly.FieldDropdown(B3D_MODE_OPTIONS), "MODE");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.OPERATION_3D);
+      this.setTooltip("build123d loft：将多个不同平面的草图截面顺滑连接过渡生成放样实体");
+    },
+  };
+
+  // b3d fillet
+  Blockly.Blocks["b3d_fillet"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("🪚 倒圆角 fillet")
+        .appendField("半径 R:")
+        .appendField(new Blockly.FieldNumber(2, 0.1), "RADIUS")
+        .appendField("边缘目标:")
+        .appendField(
+          new Blockly.FieldDropdown([
+            ["所有边缘 part.edges()", "ALL"],
+            ["Z轴竖直边缘 (平行于Z)", "PARALLEL_Z"],
+            ["顶层边缘 (最高处边)", "TOP"],
+          ]),
+          "TARGET"
+        );
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.OPERATION_3D);
+      this.setTooltip("build123d fillet：为实体边缘倒圆滑圆角");
+    },
+  };
+
+  // b3d chamfer
+  Blockly.Blocks["b3d_chamfer"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("📐 倒斜角 chamfer")
+        .appendField("斜边长度:")
+        .appendField(new Blockly.FieldNumber(2, 0.1), "LENGTH")
+        .appendField("边缘目标:")
+        .appendField(
+          new Blockly.FieldDropdown([
+            ["所有边缘 part.edges()", "ALL"],
+            ["Z轴竖直边缘 (平行于Z)", "PARALLEL_Z"],
+            ["顶层边缘 (最高处边)", "TOP"],
+          ]),
+          "TARGET"
+        );
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.OPERATION_3D);
+      this.setTooltip("build123d chamfer：为实体边缘倒斜角");
+    },
+  };
+
+  // b3d Hole
+  Blockly.Blocks["b3d_hole"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("🕳️ 打孔 Hole")
+        .appendField("半径 R:")
+        .appendField(new Blockly.FieldNumber(3, 0.1), "RADIUS")
+        .appendField("深度:")
+        .appendField(new Blockly.FieldNumber(10, 0.1), "DEPTH");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.OPERATION_3D);
+      this.setTooltip("build123d Hole：在当前位置钻孔");
+    },
+  };
+
+  // b3d offset
+  Blockly.Blocks["b3d_offset"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("🐚 抽壳/薄壁 offset")
+        .appendField("偏置厚度:")
+        .appendField(new Blockly.FieldNumber(2, -100, 100, 0.1), "AMOUNT");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.OPERATION_3D);
+      this.setTooltip("build123d offset：沿表面法向均匀膨胀或向内掏空抽壳");
+    },
+  };
+
+  // b3d split
+  Blockly.Blocks["b3d_split"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("🔪 剖切实体 split")
+        .appendField("剖切面:")
+        .appendField(
+          new Blockly.FieldDropdown([
+            ["XZ 平面 (剖切Y)", "Plane.XZ"],
+            ["YZ 平面 (剖切X)", "Plane.YZ"],
+            ["XY 平面 (剖切Z)", "Plane.XY"],
+          ]),
+          "PLANE"
+        );
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.OPERATION_3D);
+      this.setTooltip("build123d split：用指定平面剖切实体并保留一半");
+    },
+  };
+
+  // b3d color
+  Blockly.Blocks["b3d_color"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("🎨 设定模型颜色")
+        .appendField(
+          new Blockly.FieldDropdown([
+            ["经典科技蓝 (#3b82f6)", "#3b82f6"],
+            ["机械钛金灰 (#64748b)", "#64748b"],
+            ["太空香槟金 (#f59e0b)", "#f59e0b"],
+            ["能量荧光绿 (#10b981)", "#10b981"],
+            ["赤红动力 (#ef4444)", "#ef4444"],
+            ["紫晶光芒 (#8b5cf6)", "#8b5cf6"],
+          ]),
+          "COLOR"
+        );
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.OPERATION_3D);
+      this.setTooltip("设置 build123d 模型的显示颜色");
+    },
+  };
 }

@@ -23,9 +23,10 @@ import {
   readProjectFile,
 } from "@/lib/projectStorage";
 import { convertPythonToBlockly } from "@/lib/pythonToBlockly";
+import { convertBuild123dToCadQuery } from "@/lib/build123dToCadquery";
 import { useDebounce } from "@/lib/useDebounce";
 import {
-  renderCadQueryCode,
+  renderBuild123dCode,
   downloadCadExport,
   checkBackendHealth,
   StepInfo,
@@ -217,7 +218,7 @@ export default function StudioPage() {
       setErrorMessage(null);
 
       try {
-        const res = await renderCadQueryCode(targetCode, { step: targetStep });
+        const res = await renderBuild123dCode(targetCode, { step: targetStep });
         if (res.stdout !== undefined) {
           setStdout(res.stdout);
         }
@@ -349,10 +350,18 @@ export default function StudioPage() {
     }
   };
 
-  // 下载当前 Python 源码文件 (.py)
+  // 下载当前 build123d Python 源码文件 (.py)
   const handleDownloadPy = () => {
     downloadPythonFile(projectName, code);
-    showToast(`✅ 已下载 Python 脚本: ${projectName}`);
+    showToast(`✅ 已下载 build123d 源码脚本: ${projectName}`);
+  };
+
+  // 单向导出为 CadQuery 脚本 (.py)
+  const handleDownloadCadQueryPy = () => {
+    const cqCode = convertBuild123dToCadQuery(code);
+    const cqName = projectName.replace(/\.(py|json)$/i, "") + "_cadquery.py";
+    downloadPythonFile(cqName, cqCode);
+    showToast(`✅ 已导出 CadQuery 单向脚本: ${cqName}`);
   };
 
   // 导出完整工程归档包 (.cq.json)
@@ -559,53 +568,51 @@ export default function StudioPage() {
       const filletBlock = allBlocks
         .slice()
         .reverse()
-        .find((b: any) => b.type === "cq_op_fillet");
+        .find((b: any) => b.type === "b3d_fillet" || b.type === "cq_op_fillet");
 
       if (filletBlock) {
         filletBlock.setFieldValue(radius || 1.5, "RADIUS");
-        if (value) {
-          filletBlock.setFieldValue(value, "SELECTOR");
-        }
       } else {
-        const newBlock = ws.newBlock("cq_op_fillet");
+        const newBlock = ws.newBlock("b3d_fillet");
         newBlock.setFieldValue(radius || 1.5, "RADIUS");
-        if (value) {
-          newBlock.setFieldValue(value, "SELECTOR");
-        }
         newBlock.initSvg();
         newBlock.render();
         newBlock.moveTo(new (Blockly as any).utils.Coordinate(120, 220));
       }
     } else if (type === "box") {
-      const newBlock = ws.newBlock("cq_op_box");
+      const newBlock = ws.newBlock("b3d_box");
       newBlock.setFieldValue(extraParams?.length ?? 20, "LENGTH");
       newBlock.setFieldValue(extraParams?.width ?? 20, "WIDTH");
       newBlock.setFieldValue(extraParams?.height ?? 10, "HEIGHT");
+      newBlock.setFieldValue("ADD", "MODE");
       newBlock.initSvg();
       newBlock.render();
       newBlock.moveTo(new (Blockly as any).utils.Coordinate(80, 120));
     } else if (type === "cylinder") {
-      const newBlock = ws.newBlock("cq_op_cylinder");
-      newBlock.setFieldValue(extraParams?.height ?? 30, "HEIGHT");
-      newBlock.setFieldValue(extraParams?.radius ?? 15, "RADIUS");
+      const newBlock = ws.newBlock("b3d_cylinder");
+      newBlock.setFieldValue(extraParams?.radius ?? 10, "RADIUS");
+      newBlock.setFieldValue(extraParams?.height ?? 20, "HEIGHT");
+      newBlock.setFieldValue("ADD", "MODE");
       newBlock.initSvg();
       newBlock.render();
       newBlock.moveTo(new (Blockly as any).utils.Coordinate(80, 120));
     } else if (type === "sphere") {
-      const newBlock = ws.newBlock("cq_op_sphere");
-      newBlock.setFieldValue(extraParams?.radius ?? 15, "RADIUS");
+      const newBlock = ws.newBlock("b3d_sphere");
+      newBlock.setFieldValue(extraParams?.radius ?? 10, "RADIUS");
+      newBlock.setFieldValue("ADD", "MODE");
       newBlock.initSvg();
       newBlock.render();
       newBlock.moveTo(new (Blockly as any).utils.Coordinate(80, 120));
     } else if (type === "extrude") {
-      const newBlock = ws.newBlock("cq_op_extrude");
-      newBlock.setFieldValue(extraParams?.distance ?? 10, "DISTANCE");
+      const newBlock = ws.newBlock("b3d_extrude");
+      newBlock.setFieldValue(extraParams?.distance ?? 10, "AMOUNT");
+      newBlock.setFieldValue("ADD", "MODE");
       newBlock.initSvg();
       newBlock.render();
       newBlock.moveTo(new (Blockly as any).utils.Coordinate(100, 200));
     } else if (type === "hole") {
-      const newBlock = ws.newBlock("cq_op_hole");
-      newBlock.setFieldValue(extraParams?.diameter ?? 5, "DIAMETER");
+      const newBlock = ws.newBlock("b3d_hole");
+      newBlock.setFieldValue((extraParams?.diameter ?? 6) / 2, "RADIUS");
       newBlock.setFieldValue(extraParams?.depth ?? 10, "DEPTH");
       newBlock.initSvg();
       newBlock.render();
@@ -678,6 +685,7 @@ export default function StudioPage() {
         onExportStl={handleExportStl}
         onExportStep={handleExportStep}
         onDownloadPy={handleDownloadPy}
+        onDownloadCadQueryPy={handleDownloadCadQueryPy}
         onExportProject={handleExportProject}
         onImportProject={handleImportProject}
         saveToastMsg={saveToastMsg}

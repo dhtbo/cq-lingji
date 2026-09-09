@@ -18,4 +18,18 @@ export function registerCommentBlocks() {
       this.setHelpUrl("");
     },
   };
+
+  // build123d 注释积木
+  Blockly.Blocks["b3d_comment"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("💬 注释")
+        .appendField(new Blockly.FieldTextInput("在此处记录建模设计说明..."), "TEXT");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.COMMENT);
+      this.setTooltip("在 build123d Python 代码中生成单行注释 (# ...)，用于解释建模意图与尺寸说明");
+      this.setHelpUrl("");
+    },
+  };
 }

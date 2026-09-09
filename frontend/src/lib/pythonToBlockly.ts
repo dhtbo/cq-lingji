@@ -1,7 +1,7 @@
 /**
- * CadQuery Python 代码到 Blockly 积木逆向转换器 (Code-to-Blocks Engine)
- * 支持 Fluent API 链式调用与分步赋值语句的高容错 AST/词法解析，
- * 自动识别基准面、2D草图、3D拉伸、打孔、切削、倒角并构建垂直连接积木堆
+ * build123d / CadQuery Python 代码到 Blockly 积木逆向转换器 (Code-to-Blocks Engine 2.0)
+ * 深度支持 build123d Builder 容器层级嵌套语法 (BuildPart, BuildSketch, Locations 等)
+ * 及 3D 实体、2D 草图、3D 特征、阵列模式与注释的无损还原；同时向下兼容 CadQuery 经典链式代码。
  */
 
 import * as Blockly from "blockly";
@@ -9,349 +9,550 @@ import * as Blockly from "blockly";
 export interface ParsedBlockDef {
   type: string;
   fields: Record<string, string | number>;
+  children?: ParsedBlockDef[]; // 容器子积木 (对应 Statement Input "DO")
 }
-
-interface PatternRule {
-  type: string;
-  regex: RegExp;
-  extract: (match: RegExpExecArray) => Record<string, string | number>;
-}
-
-const PATTERN_RULES: PatternRule[] = [
-  // 1. 初始化基准面
-  {
-    type: "cq_init_workplane",
-    regex: /cq\.Workplane\s*\(\s*["'](XY|XZ|YZ)["']\s*\)/gi,
-    extract: (m) => ({ PLANE: m[1].toUpperCase() }),
-  },
-  // 2. 复合特征：倒圆台放样
-  {
-    type: "cq_op_cone",
-    regex: /\.circle\s*\(\s*([0-9.]+)\s*\)\s*\.workplane\s*\(\s*offset\s*=\s*([0-9.]+)\s*\)\s*\.circle\s*\(\s*([0-9.]+)\s*\)\s*\.loft\s*\([^)]*\)/gi,
-    extract: (m) => ({
-      R_BOTTOM: parseFloat(m[1]),
-      HEIGHT: parseFloat(m[2]),
-      R_TOP: parseFloat(m[3]),
-    }),
-  },
-  // 3. 复合特征：极坐标孔系阵列
-  {
-    type: "cq_op_polar_array",
-    regex: /\.polarArray\s*\(\s*(?:radius=)?([0-9.]+)\s*,\s*(?:startAngle=[0-9.]+\s*,\s*)?(?:angle=[0-9.]+\s*,\s*)?(?:count=)?([0-9]+)\s*\)\s*\.circle\s*\(\s*([0-9.]+)\s*\)\s*\.cutThruAll\s*\(\s*\)/gi,
-    extract: (m) => ({
-      RADIUS: parseFloat(m[1]),
-      COUNT: parseInt(m[2], 10),
-      DIAMETER: parseFloat(m[3]) * 2,
-    }),
-  },
-  // 4. 复合特征：散热格栅槽切削
-  {
-    type: "cq_op_cooling_slots",
-    regex: /\.polarArray\s*\([^)]*count\s*=\s*([0-9]+)[^)]*\)\s*\.rect\s*\(\s*([0-9.]+)\s*,\s*[0-9.]+\s*\)\s*\.cutBlind\s*\(\s*-?([0-9.]+)\s*\)/gi,
-    extract: (m) => ({
-      COUNT: parseInt(m[1], 10),
-      WIDTH: parseFloat(m[2]),
-      DEPTH: parseFloat(m[3]),
-    }),
-  },
-  // 5. 面选择与局部工作面 (支持 centerOption)
-  {
-    type: "cq_sel_face",
-    regex: /\.faces\s*\(\s*["']([^"']+)["']\s*\)\.workplane\s*\((?:[^)]*centerOption\s*=\s*["']([^"']+)["'])?[^)]*\)/gi,
-    extract: (m) => ({
-      SELECTOR: m[1],
-      CENTER_OPTION: m[2] || "CenterOfMass",
-    }),
-  },
-  // 6. 倒圆角: 圆形边缘 faces('>Z').edges('%Circle').fillet(...)
-  {
-    type: "cq_op_fillet",
-    regex: /\.faces\s*\(\s*["'][^"']+["']\s*\)\.edges\s*\(\s*["']%Circle["']\s*\)\.fillet\s*\(\s*(?:radius=)?([0-9.]+)\s*\)/gi,
-    extract: (m) => ({
-      SELECTOR: "faces_Z_circle",
-      RADIUS: parseFloat(m[1]),
-    }),
-  },
-  // 7. 通用倒圆角
-  {
-    type: "cq_op_fillet",
-    regex: /\.edges\s*\(\s*(?:["']([^"']+)["'])?\s*\)\.fillet\s*\(\s*(?:radius=)?([0-9.]+)\s*\)/gi,
-    extract: (m) => ({
-      SELECTOR: m[1] || "",
-      RADIUS: parseFloat(m[2]),
-    }),
-  },
-  // 8. 倒斜角 chamfer
-  {
-    type: "cq_op_chamfer",
-    regex: /\.edges\s*\(\s*(?:["']([^"']+)["'])?\s*\)\.chamfer\s*\(\s*(?:length=)?([0-9.]+)\s*\)/gi,
-    extract: (m) => ({
-      SELECTOR: m[1] || "",
-      LENGTH: parseFloat(m[2]),
-    }),
-  },
-  // 9. 2D 草图: 圆形
-  {
-    type: "cq_sketch_circle",
-    regex: /\.circle\s*\(\s*(?:radius=)?([0-9.]+)\s*\)/gi,
-    extract: (m) => ({
-      RADIUS: parseFloat(m[1]),
-    }),
-  },
-  // 10. 2D 草图: 矩形
-  {
-    type: "cq_sketch_rect",
-    regex: /\.rect\s*\(\s*(?:xLen=)?([0-9.]+)\s*,\s*(?:yLen=)?([0-9.]+)\s*\)/gi,
-    extract: (m) => ({
-      WIDTH: parseFloat(m[1]),
-      HEIGHT: parseFloat(m[2]),
-    }),
-  },
-  // 11. 2D 草图: 正多边形
-  {
-    type: "cq_sketch_polygon",
-    regex: /\.polygon\s*\(\s*(?:nSides=)?([0-9]+)\s*,\s*(?:diameter=)?([0-9.]+)\s*\)/gi,
-    extract: (m) => ({
-      SIDES: parseInt(m[1], 10),
-      DIAMETER: parseFloat(m[2]),
-    }),
-  },
-  // 11.1 2D 草图: 自定义多边形区域 polyline
-  {
-    type: "cq_sketch_polyline",
-    regex: /\.polyline\s*\(\s*(\[[^\]]+\]|[a-zA-Z_]\w*)\s*\)(?:\s*\.close\s*\(\s*\))?/gi,
-    extract: (m) => ({
-      POINTS: m[1],
-      CLOSE: m[0].includes(".close") ? "TRUE" : "FALSE",
-    }),
-  },
-  // 11.2 2D 草图: 腰形槽 slot2D
-  {
-    type: "cq_sketch_slot",
-    regex: /\.slot2D\s*\(\s*(?:length=)?([0-9.]+)\s*,\s*(?:diameter=)?([0-9.]+)(?:\s*,\s*(?:angle=)?([0-9.-]+))?\s*\)/gi,
-    extract: (m) => ({
-      LENGTH: parseFloat(m[1]),
-      DIAMETER: parseFloat(m[2]),
-      ANGLE: m[3] ? parseFloat(m[3]) : 0,
-    }),
-  },
-  // 11.3 2D 草图: 椭圆 ellipse
-  {
-    type: "cq_sketch_ellipse",
-    regex: /\.ellipse\s*\(\s*(?:x_radius=)?([0-9.]+)\s*,\s*(?:y_radius=)?([0-9.]+)\s*\)/gi,
-    extract: (m) => ({
-      X_RADIUS: parseFloat(m[1]),
-      Y_RADIUS: parseFloat(m[2]),
-    }),
-  },
-  // 11.4 3D 操作: 表面抽壳 shell
-  {
-    type: "cq_op_shell",
-    regex: /(?:\.faces\s*\(\s*["']([^"']+)["']\s*\))?\.shell\s*\(\s*(?:thickness=)?-?([0-9.]+)\s*\)/gi,
-    extract: (m) => ({
-      SELECTOR: m[1] || ">Z",
-      THICKNESS: parseFloat(m[2]),
-    }),
-  },
-  // 11.5 3D 操作: 3D 浮雕文字 text
-  {
-    type: "cq_op_text",
-    regex: /\.text\s*\(\s*["']([^"']+)["']\s*(?:,\s*(?:fontsize=)?([0-9.]+))?(?:,\s*(?:distance=)?([0-9.]+))?[^)]*\)/gi,
-    extract: (m) => ({
-      TEXT: m[1],
-      FONT_SIZE: m[2] ? parseFloat(m[2]) : 12,
-      DISTANCE: m[3] ? parseFloat(m[3]) : 2,
-    }),
-  },
-  // 12. 3D 操作: 拉伸 extrude
-  {
-    type: "cq_op_extrude",
-    regex: /\.extrude\s*\(\s*(?:distance=)?([0-9.]+)\s*\)/gi,
-    extract: (m) => ({
-      DISTANCE: parseFloat(m[1]),
-    }),
-  },
-  // 13. 3D 操作: 打孔 hole
-  {
-    type: "cq_op_hole",
-    regex: /\.hole\s*\(\s*(?:diameter=)?([0-9.]+)\s*,\s*(?:depth=)?([0-9.]+)\s*\)/gi,
-    extract: (m) => ({
-      DIAMETER: parseFloat(m[1]),
-      DEPTH: parseFloat(m[2]),
-    }),
-  },
-  // 14. 3D 操作: 盲切 cutBlind
-  {
-    type: "cq_op_cut_blind",
-    regex: /\.cutBlind\s*\(\s*(?:depth=)?-?([0-9.]+)\s*\)/gi,
-    extract: (m) => ({
-      DEPTH: parseFloat(m[1]),
-    }),
-  },
-  // 15. 基础实体: 立方体 box
-  {
-    type: "cq_op_box",
-    regex: /\.box\s*\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)\s*\)/gi,
-    extract: (m) => ({
-      LENGTH: parseFloat(m[1]),
-      WIDTH: parseFloat(m[2]),
-      HEIGHT: parseFloat(m[3]),
-    }),
-  },
-  // 16. 基础实体: 圆柱体 cylinder
-  {
-    type: "cq_op_cylinder",
-    regex: /\.cylinder\s*\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*\)/gi,
-    extract: (m) => ({
-      HEIGHT: parseFloat(m[1]),
-      RADIUS: parseFloat(m[2]),
-    }),
-  },
-  // 17. 基础实体: 球体 sphere
-  {
-    type: "cq_op_sphere",
-    regex: /\.sphere\s*\(\s*([0-9.]+)\s*\)/gi,
-    extract: (m) => ({
-      RADIUS: parseFloat(m[1]),
-    }),
-  },
-  // 18. 偏移基准面 workplane(offset=...)
-  {
-    type: "cq_sel_offset",
-    regex: /\.workplane\s*\(\s*offset\s*=\s*([0-9.]+)\s*\)/gi,
-    extract: (m) => ({
-      OFFSET: parseFloat(m[1]),
-    }),
-  },
-  // 19. 旋转成型 revolve
-  {
-    type: "cq_op_revolve",
-    regex: /\.revolve\s*\(\s*([0-9.]+)\s*(?:,\s*\([^)]+\)\s*,\s*\(([0-9.]+),\s*([0-9.]+),\s*([0-9.]+)\))?\s*\)/gi,
-    extract: (m) => {
-      const angle = parseFloat(m[1]);
-      let axis = "X";
-      if (m[3] && parseFloat(m[3]) === 1) axis = "Y";
-      if (m[4] && parseFloat(m[4]) === 1) axis = "Z";
-      return { ANGLE: angle, AXIS: axis };
-    },
-  },
-  // 20. 空间变换 transformed
-  {
-    type: "cq_op_transform",
-    regex: /\.transformed\s*\(\s*rotate\s*=\s*\(\s*([0-9.-]+)\s*,\s*([0-9.-]+)\s*,\s*([0-9.-]+)\s*\)\s*,\s*offset\s*=\s*\(\s*([0-9.-]+)\s*,\s*([0-9.-]+)\s*,\s*([0-9.-]+)\s*\)\s*\)/gi,
-    extract: (m) => ({
-      RX: parseFloat(m[1]),
-      RY: parseFloat(m[2]),
-      RZ: parseFloat(m[3]),
-      OX: parseFloat(m[4]),
-      OY: parseFloat(m[5]),
-      OZ: parseFloat(m[6]),
-    }),
-  },
-];
 
 /**
- * 解析 Python CadQuery 源码中的几何操作链
+ * 辅助：提取 mode 参数
  */
-export function parseCadQueryCode(code: string): ParsedBlockDef[] {
-  interface MatchItem {
-    start: number;
-    end: number;
-    type: string;
-    fields: Record<string, string | number>;
-  }
-
-  const allMatches: MatchItem[] = [];
-
-  // 1. 优先提取单行独立注释 (# ...) 作为注释积木
-  const commentRegex = /^[ \t]*#[ \t]*(.*?)[ \t]*$/gm;
-  let cMatch: RegExpExecArray | null;
-  while ((cMatch = commentRegex.exec(code)) !== null) {
-    const text = cMatch[1].trim();
-    if (text && !text.startsWith("-*-") && !text.startsWith("coding:")) {
-      allMatches.push({
-        start: cMatch.index,
-        end: cMatch.index + cMatch[0].length,
-        type: "cq_comment",
-        fields: { TEXT: text },
-      });
-    }
-  }
-
-  // 2. 将代码中的注释替换为等长空格，保持字符索引偏移 100% 一致
-  let cleanCode = code.replace(/#.*$/gm, (m) => " ".repeat(m.length));
-
-  // 3. 智能提取顶层定义的数值常量变量 (例如 radius = 15.0, height = 40)
-  const varMap: Record<string, number> = {};
-  const varRegex = /^\s*([a-zA-Z_]\w*)\s*=\s*(-?[0-9]+(?:\.[0-9]+)?)\s*$/gm;
-  let vMatch: RegExpExecArray | null;
-  while ((vMatch = varRegex.exec(cleanCode)) !== null) {
-    varMap[vMatch[1]] = parseFloat(vMatch[2]);
-  }
-
-  // 4. 将几何调用中的变量引用替换为对应数值字面量，提升逆向解析兼容性
-  for (const [varName, val] of Object.entries(varMap)) {
-    const wordRegex = new RegExp(`(?<=[(,=\\s+\\-*\\/])${varName}(?=[),=\\s+\\-*\\/])`, "g");
-    cleanCode = cleanCode.replace(wordRegex, String(val));
-  }
-
-  for (const rule of PATTERN_RULES) {
-    rule.regex.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = rule.regex.exec(cleanCode)) !== null) {
-      try {
-        const fields = rule.extract(match);
-        allMatches.push({
-          start: match.index,
-          end: match.index + match[0].length,
-          type: rule.type,
-          fields,
-        });
-      } catch (err) {
-        console.warn("提取特征参数失败:", err);
-      }
-    }
-  }
-
-  // 按照代码出现顺序从小到大排序
-  allMatches.sort((a, b) => a.start - b.start);
-
-  // 贪婪去除重叠匹配（如多步宏匹配与子操作重叠）
-  const filtered: ParsedBlockDef[] = [];
-  let lastEnd = 0;
-
-  for (const item of allMatches) {
-    if (item.start >= lastEnd) {
-      filtered.push({
-        type: item.type,
-        fields: item.fields,
-      });
-      lastEnd = item.end;
-    }
-  }
-
-  // 默认兜底：如果没找到 Workplane 起点，但找到了几何特征，在首个非注释特征前插入默认 XY 基准面
-  const hasWorkplane = filtered.some((m) => m.type === "cq_init_workplane");
-  if (!hasWorkplane && filtered.length > 0) {
-    const firstGeomIdx = filtered.findIndex((m) => m.type !== "cq_comment");
-    if (firstGeomIdx !== -1) {
-      filtered.splice(firstGeomIdx, 0, {
-        type: "cq_init_workplane",
-        fields: { PLANE: "XY" },
-      });
-    } else {
-      filtered.push({
-        type: "cq_init_workplane",
-        fields: { PLANE: "XY" },
-      });
-    }
-  }
-
-  return filtered;
+function extractMode(text: string): string {
+  if (/Mode\.SUBTRACT/i.test(text)) return "SUBTRACT";
+  if (/Mode\.INTERSECT/i.test(text)) return "INTERSECT";
+  return "ADD";
 }
 
 /**
- * 将 Python 源码逆向解析并注入渲染至 Blockly 工作区
+ * 辅助：提取工作平面
+ */
+function extractPlane(text: string): string {
+  if (/Plane\.XZ/i.test(text) || /["']XZ["']/i.test(text)) return "XZ";
+  if (/Plane\.YZ/i.test(text) || /["']YZ["']/i.test(text)) return "YZ";
+  return "XY";
+}
+
+/**
+ * 逐行与缩进语法分析器，将 Python 代码解析为结构化积木树
+ */
+export function parseBuild123dCode(code: string): ParsedBlockDef[] {
+  const lines = code.split(/\r?\n/);
+  const blocks: ParsedBlockDef[] = [];
+
+  // 当前激活的容器栈: { indent: number, block: ParsedBlockDef }
+  const stack: { indent: number; block: ParsedBlockDef }[] = [];
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const rawLine = lines[lineIndex];
+    const trimmed = rawLine.trim();
+
+    // 跳过空行或标准导入
+    if (!trimmed || trimmed.startsWith("from build123d") || trimmed.startsWith("import build123d") || trimmed.startsWith("import cadquery")) {
+      continue;
+    }
+
+    // 计算当前行缩进空格数
+    const indent = rawLine.search(/\S|$/);
+
+    // 弹出缩进比当前行更深或相等的容器
+    while (stack.length > 0 && stack[stack.length - 1].indent >= indent) {
+      stack.pop();
+    }
+
+    const currentContainer = stack.length > 0 ? stack[stack.length - 1].block : null;
+
+    const addBlock = (b: ParsedBlockDef) => {
+      if (currentContainer) {
+        if (!currentContainer.children) currentContainer.children = [];
+        currentContainer.children.push(b);
+      } else {
+        blocks.push(b);
+      }
+    };
+
+    // 1. 注释识别
+    if (trimmed.startsWith("#")) {
+      const commentText = trimmed.replace(/^#+\s*/, "");
+      addBlock({
+        type: "b3d_comment",
+        fields: { TEXT: commentText },
+      });
+      continue;
+    }
+
+    // 2. with BuildPart(...) 容器
+    if (/with\s+BuildPart\s*\((.*?)\)/i.test(trimmed)) {
+      const planeMatch = trimmed.match(/with\s+BuildPart\s*\((.*?)\)/i);
+      const plane = planeMatch ? extractPlane(planeMatch[1]) : "XY";
+      const block: ParsedBlockDef = {
+        type: "b3d_build_part",
+        fields: { PLANE: plane },
+        children: [],
+      };
+      addBlock(block);
+      stack.push({ indent, block });
+      continue;
+    }
+
+    // 3. with BuildSketch(...) 容器
+    if (/with\s+BuildSketch\s*\((.*?)\)/i.test(trimmed)) {
+      const planeMatch = trimmed.match(/with\s+BuildSketch\s*\((.*?)\)/i);
+      let plane = "XY";
+      if (planeMatch) {
+        const arg = planeMatch[1];
+        if (/faces\(\).*?top|faces\(\).*?\[-1\]/i.test(arg)) {
+          plane = "TOP_FACE";
+        } else if (/faces\(\).*?bottom|faces\(\).*?\[0\]/i.test(arg)) {
+          plane = "BOTTOM_FACE";
+        } else {
+          plane = extractPlane(arg);
+        }
+      }
+      const block: ParsedBlockDef = {
+        type: "b3d_build_sketch",
+        fields: { PLANE: plane },
+        children: [],
+      };
+      addBlock(block);
+      stack.push({ indent, block });
+      continue;
+    }
+
+    // 4. with Locations(...) 定位容器
+    if (/with\s+Locations\s*\(\s*\(\s*([-\d.]+)\s*,\s*([-\d.]+)(?:\s*,\s*([-\d.]+))?\s*\)\s*\)/i.test(trimmed)) {
+      const m = trimmed.match(/with\s+Locations\s*\(\s*\(\s*([-\d.]+)\s*,\s*([-\d.]+)(?:\s*,\s*([-\d.]+))?\s*\)\s*\)/i)!;
+      const block: ParsedBlockDef = {
+        type: "b3d_locations",
+        fields: {
+          X: parseFloat(m[1]),
+          Y: parseFloat(m[2]),
+          Z: m[3] ? parseFloat(m[3]) : 0,
+        },
+        children: [],
+      };
+      addBlock(block);
+      stack.push({ indent, block });
+      continue;
+    }
+
+    // 5. with GridLocations(...) 矩形网格阵列
+    if (/with\s+GridLocations\s*\((.*?)\)/i.test(trimmed)) {
+      const argsMatch = trimmed.match(/with\s+GridLocations\s*\((.*?)\)/i)!;
+      const parts = argsMatch[1].split(",").map((s) => parseFloat(s.trim())).filter((n) => !isNaN(n));
+      const block: ParsedBlockDef = {
+        type: "b3d_grid_locations",
+        fields: {
+          X_SPACING: parts[0] ?? 15,
+          Y_SPACING: parts[1] ?? 15,
+          X_COUNT: parts[2] ?? 3,
+          Y_COUNT: parts[3] ?? 3,
+        },
+        children: [],
+      };
+      addBlock(block);
+      stack.push({ indent, block });
+      continue;
+    }
+
+    // 6. with PolarLocations(...) 环形极坐标阵列
+    if (/with\s+PolarLocations\s*\((.*?)\)/i.test(trimmed)) {
+      const rMatch = trimmed.match(/(?:radius\s*=\s*)?([-\d.]+)/i);
+      const cMatch = trimmed.match(/(?:count\s*=\s*)?(\d+)\s*\)/i);
+      const block: ParsedBlockDef = {
+        type: "b3d_polar_locations",
+        fields: {
+          RADIUS: rMatch ? parseFloat(rMatch[1]) : 20,
+          COUNT: cMatch ? parseInt(cMatch[1], 10) : 6,
+        },
+        children: [],
+      };
+      addBlock(block);
+      stack.push({ indent, block });
+      continue;
+    }
+
+    // 7. with HexLocations(...) 蜂窝六边形阵列
+    if (/with\s+HexLocations\s*\((.*?)\)/i.test(trimmed)) {
+      const parts = trimmed.replace(/with\s+HexLocations\s*\(/i, "").replace(/\).*/, "").split(",").map((s) => parseFloat(s.trim())).filter((n) => !isNaN(n));
+      const block: ParsedBlockDef = {
+        type: "b3d_hex_locations",
+        fields: {
+          APOTHEM: parts[0] ?? 10,
+          X_COUNT: parts[1] ?? 3,
+          Y_COUNT: parts[2] ?? 3,
+        },
+        children: [],
+      };
+      addBlock(block);
+      stack.push({ indent, block });
+      continue;
+    }
+
+    // 8. 3D 基础实体: Box
+    if (/Box\s*\((.*?)\)/i.test(trimmed)) {
+      const nums = trimmed.match(/([-\d.]+)/g) || [];
+      addBlock({
+        type: "b3d_box",
+        fields: {
+          LENGTH: nums[0] ? parseFloat(nums[0]) : 20,
+          WIDTH: nums[1] ? parseFloat(nums[1]) : 20,
+          HEIGHT: nums[2] ? parseFloat(nums[2]) : 10,
+          MODE: extractMode(trimmed),
+        },
+      });
+      continue;
+    }
+
+    // 9. 3D 基础实体: Cylinder
+    if (/Cylinder\s*\((.*?)\)/i.test(trimmed)) {
+      const rMatch = trimmed.match(/radius\s*=\s*([-\d.]+)/i) || trimmed.match(/Cylinder\s*\(\s*([-\d.]+)/i);
+      const hMatch = trimmed.match(/height\s*=\s*([-\d.]+)/i) || trimmed.match(/,\s*([-\d.]+)/i);
+      addBlock({
+        type: "b3d_cylinder",
+        fields: {
+          RADIUS: rMatch ? parseFloat(rMatch[1]) : 10,
+          HEIGHT: hMatch ? parseFloat(hMatch[1]) : 20,
+          MODE: extractMode(trimmed),
+        },
+      });
+      continue;
+    }
+
+    // 10. 3D 基础实体: Sphere
+    if (/Sphere\s*\((.*?)\)/i.test(trimmed)) {
+      const rMatch = trimmed.match(/radius\s*=\s*([-\d.]+)/i) || trimmed.match(/Sphere\s*\(\s*([-\d.]+)/i);
+      addBlock({
+        type: "b3d_sphere",
+        fields: {
+          RADIUS: rMatch ? parseFloat(rMatch[1]) : 10,
+          MODE: extractMode(trimmed),
+        },
+      });
+      continue;
+    }
+
+    // 11. 3D 基础实体: Cone
+    if (/Cone\s*\((.*?)\)/i.test(trimmed)) {
+      const nums = trimmed.match(/([-\d.]+)/g) || [];
+      addBlock({
+        type: "b3d_cone",
+        fields: {
+          R1: nums[0] ? parseFloat(nums[0]) : 15,
+          R2: nums[1] ? parseFloat(nums[1]) : 5,
+          HEIGHT: nums[2] ? parseFloat(nums[2]) : 20,
+          MODE: extractMode(trimmed),
+        },
+      });
+      continue;
+    }
+
+    // 12. 3D 基础实体: Torus
+    if (/Torus\s*\((.*?)\)/i.test(trimmed)) {
+      const nums = trimmed.match(/([-\d.]+)/g) || [];
+      addBlock({
+        type: "b3d_torus",
+        fields: {
+          R1: nums[0] ? parseFloat(nums[0]) : 20,
+          R2: nums[1] ? parseFloat(nums[1]) : 5,
+          MODE: extractMode(trimmed),
+        },
+      });
+      continue;
+    }
+
+    // 13. 2D 草图: Rectangle
+    if (/Rectangle\s*\((.*?)\)/i.test(trimmed)) {
+      const nums = trimmed.match(/([-\d.]+)/g) || [];
+      addBlock({
+        type: "b3d_sketch_rect",
+        fields: {
+          WIDTH: nums[0] ? parseFloat(nums[0]) : 20,
+          HEIGHT: nums[1] ? parseFloat(nums[1]) : 20,
+          MODE: extractMode(trimmed),
+        },
+      });
+      continue;
+    }
+
+    // 14. 2D 草图: Circle
+    if (/Circle\s*\((.*?)\)/i.test(trimmed)) {
+      const rMatch = trimmed.match(/radius\s*=\s*([-\d.]+)/i) || trimmed.match(/Circle\s*\(\s*([-\d.]+)/i);
+      addBlock({
+        type: "b3d_sketch_circle",
+        fields: {
+          RADIUS: rMatch ? parseFloat(rMatch[1]) : 10,
+          MODE: extractMode(trimmed),
+        },
+      });
+      continue;
+    }
+
+    // 15. 2D 草图: RegularPolygon
+    if (/RegularPolygon\s*\((.*?)\)/i.test(trimmed)) {
+      const rMatch = trimmed.match(/radius\s*=\s*([-\d.]+)/i) || trimmed.match(/RegularPolygon\s*\(\s*([-\d.]+)/i);
+      const sMatch = trimmed.match(/side_count\s*=\s*(\d+)/i) || trimmed.match(/,\s*(\d+)/i);
+      addBlock({
+        type: "b3d_sketch_regular_polygon",
+        fields: {
+          RADIUS: rMatch ? parseFloat(rMatch[1]) : 10,
+          SIDES: sMatch ? parseInt(sMatch[1], 10) : 6,
+          MODE: extractMode(trimmed),
+        },
+      });
+      continue;
+    }
+
+    // 16. 2D 草图: Polygon / Polyline
+    if (/Polygon\s*\((.*?)\)/i.test(trimmed)) {
+      const ptsMatch = trimmed.match(/\[\s*\(.*?\)\]/);
+      addBlock({
+        type: "b3d_sketch_polygon",
+        fields: {
+          POINTS: ptsMatch ? ptsMatch[0] : "[(0,0), (20,0), (20,15), (0,15)]",
+          MODE: extractMode(trimmed),
+        },
+      });
+      continue;
+    }
+
+    if (/Polyline\s*\((.*?)\)/i.test(trimmed)) {
+      const ptsMatch = trimmed.match(/\[\s*\(.*?\)\]/);
+      const closeMatch = /close\s*=\s*(True|False)/i.exec(trimmed);
+      addBlock({
+        type: "b3d_sketch_polyline",
+        fields: {
+          POINTS: ptsMatch ? ptsMatch[0] : "[(0,0), (10,5), (20,0)]",
+          CLOSE: closeMatch && closeMatch[1].toLowerCase() === "false" ? "FALSE" : "TRUE",
+        },
+      });
+      continue;
+    }
+
+    // 17. 2D 草图: Slot2D
+    if (/Slot2D\s*\((.*?)\)/i.test(trimmed)) {
+      const nums = trimmed.match(/([-\d.]+)/g) || [];
+      addBlock({
+        type: "b3d_sketch_slot",
+        fields: {
+          LENGTH: nums[0] ? parseFloat(nums[0]) : 30,
+          WIDTH: nums[1] ? parseFloat(nums[1]) : 10,
+          ROTATION: nums[2] ? parseFloat(nums[2]) : 0,
+          MODE: extractMode(trimmed),
+        },
+      });
+      continue;
+    }
+
+    // 18. 3D 特征: extrude
+    if (/extrude\s*\((.*?)\)/i.test(trimmed)) {
+      const amountMatch = trimmed.match(/amount\s*=\s*([-\d.]+)/i) || trimmed.match(/extrude\s*\(\s*([-\d.]+)/i);
+      addBlock({
+        type: "b3d_extrude",
+        fields: {
+          AMOUNT: amountMatch ? parseFloat(amountMatch[1]) : 10,
+          MODE: extractMode(trimmed),
+        },
+      });
+      continue;
+    }
+
+    // 19. 3D 特征: revolve
+    if (/revolve\s*\((.*?)\)/i.test(trimmed)) {
+      const angleMatch = trimmed.match(/(?:revolution_arc|angle)\s*=\s*([-\d.]+)/i) || trimmed.match(/revolve\s*\([^,]+,\s*([-\d.]+)/i);
+      let axis = "Axis.Z";
+      if (/Axis\.X/i.test(trimmed)) axis = "Axis.X";
+      else if (/Axis\.Y/i.test(trimmed)) axis = "Axis.Y";
+      addBlock({
+        type: "b3d_revolve",
+        fields: {
+          ANGLE: angleMatch ? parseFloat(angleMatch[1]) : 360,
+          AXIS: axis,
+          MODE: extractMode(trimmed),
+        },
+      });
+      continue;
+    }
+
+    // 20. 3D 特征: fillet
+    if (/fillet\s*\((.*?)\)/i.test(trimmed)) {
+      const rMatch = trimmed.match(/radius\s*=\s*([-\d.]+)/i) || trimmed.match(/,\s*([-\d.]+)\s*\)/i);
+      let target = "ALL";
+      if (/filter_by\s*\(\s*Axis\.Z\s*\)/i.test(trimmed)) target = "PARALLEL_Z";
+      else if (/sort_by\s*\(\s*Axis\.Z\s*\)\[-1\]/i.test(trimmed)) target = "TOP";
+      addBlock({
+        type: "b3d_fillet",
+        fields: {
+          RADIUS: rMatch ? parseFloat(rMatch[1]) : 2,
+          TARGET: target,
+        },
+      });
+      continue;
+    }
+
+    // 21. 3D 特征: chamfer
+    if (/chamfer\s*\((.*?)\)/i.test(trimmed)) {
+      const lMatch = trimmed.match(/length\s*=\s*([-\d.]+)/i) || trimmed.match(/,\s*([-\d.]+)\s*\)/i);
+      let target = "ALL";
+      if (/filter_by\s*\(\s*Axis\.Z\s*\)/i.test(trimmed)) target = "PARALLEL_Z";
+      else if (/sort_by\s*\(\s*Axis\.Z\s*\)\[-1\]/i.test(trimmed)) target = "TOP";
+      addBlock({
+        type: "b3d_chamfer",
+        fields: {
+          LENGTH: lMatch ? parseFloat(lMatch[1]) : 2,
+          TARGET: target,
+        },
+      });
+      continue;
+    }
+
+    // 22. 3D 特征: Hole
+    if (/Hole\s*\((.*?)\)/i.test(trimmed)) {
+      const rMatch = trimmed.match(/radius\s*=\s*([-\d.]+)/i) || trimmed.match(/Hole\s*\(\s*([-\d.]+)/i);
+      const dMatch = trimmed.match(/depth\s*=\s*([-\d.]+)/i) || trimmed.match(/,\s*([-\d.]+)\s*\)/i);
+      addBlock({
+        type: "b3d_hole",
+        fields: {
+          RADIUS: rMatch ? parseFloat(rMatch[1]) : 3,
+          DEPTH: dMatch ? parseFloat(dMatch[1]) : 10,
+        },
+      });
+      continue;
+    }
+
+    // 23. 3D 特征: offset
+    if (/offset\s*\((.*?)\)/i.test(trimmed)) {
+      const aMatch = trimmed.match(/amount\s*=\s*([-\d.]+)/i) || trimmed.match(/offset\s*\(\s*([-\d.]+)/i);
+      addBlock({
+        type: "b3d_offset",
+        fields: {
+          AMOUNT: aMatch ? parseFloat(aMatch[1]) : 2,
+        },
+      });
+      continue;
+    }
+
+    // 24. 3D 特征: split
+    if (/split\s*\((.*?)\)/i.test(trimmed)) {
+      let plane = "Plane.XZ";
+      if (/Plane\.YZ/i.test(trimmed)) plane = "Plane.YZ";
+      else if (/Plane\.XY/i.test(trimmed)) plane = "Plane.XY";
+      addBlock({
+        type: "b3d_split",
+        fields: {
+          PLANE: plane,
+        },
+      });
+      continue;
+    }
+
+    // 25. 颜色设置
+    if (/\.color\s*=\s*Color\s*\(\s*["']([^"']+)["']\s*\)/i.test(trimmed)) {
+      const cMatch = trimmed.match(/\.color\s*=\s*Color\s*\(\s*["']([^"']+)["']\s*\)/i);
+      addBlock({
+        type: "b3d_color",
+        fields: {
+          COLOR: cMatch ? cMatch[1] : "#3b82f6",
+        },
+      });
+      continue;
+    }
+
+    // ==================== 兼容旧 CadQuery 语句 ====================
+    if (/cq\.Workplane\s*\(\s*["'](XY|XZ|YZ)["']\s*\)/i.test(trimmed)) {
+      const plane = extractPlane(trimmed);
+      const block: ParsedBlockDef = {
+        type: "b3d_build_part",
+        fields: { PLANE: plane },
+        children: [],
+      };
+      addBlock(block);
+      stack.push({ indent, block });
+      continue;
+    }
+
+    if (/\.box\s*\((.*?)\)/i.test(trimmed)) {
+      const nums = trimmed.match(/([-\d.]+)/g) || [];
+      addBlock({
+        type: "b3d_box",
+        fields: {
+          LENGTH: nums[0] ? parseFloat(nums[0]) : 20,
+          WIDTH: nums[1] ? parseFloat(nums[1]) : 20,
+          HEIGHT: nums[2] ? parseFloat(nums[2]) : 10,
+          MODE: "ADD",
+        },
+      });
+      continue;
+    }
+  }
+
+  // 如果解析出的有效实体积木没有被包裹在 BuildPart 中，自动包裹在首层 BuildPart 内
+  const hasPartContainer = blocks.some((b) => b.type === "b3d_build_part");
+  if (!hasPartContainer && blocks.length > 0) {
+    const rootPart: ParsedBlockDef = {
+      type: "b3d_build_part",
+      fields: { PLANE: "XY" },
+      children: [...blocks],
+    };
+    return [rootPart];
+  }
+
+  return blocks;
+}
+
+/**
+ * 递归构建积木连接树
+ */
+function buildBlockTree(
+  workspace: Blockly.WorkspaceSvg,
+  defs: ParsedBlockDef[],
+  parentConnection: Blockly.Connection | null
+): { firstBlock: Blockly.BlockSvg | null; count: number } {
+  let prevBlock: Blockly.BlockSvg | null = null;
+  let firstBlock: Blockly.BlockSvg | null = null;
+  let totalCount = 0;
+
+  for (let i = 0; i < defs.length; i++) {
+    const def = defs[i];
+    try {
+      const block = workspace.newBlock(def.type) as Blockly.BlockSvg;
+
+      // 填充字段
+      for (const [k, v] of Object.entries(def.fields)) {
+        block.setFieldValue(v as any, k);
+      }
+
+      block.initSvg();
+      block.render();
+
+      if (i === 0) {
+        firstBlock = block;
+        if (parentConnection && block.previousConnection) {
+          parentConnection.connect(block.previousConnection);
+        }
+      } else if (prevBlock && prevBlock.nextConnection && block.previousConnection) {
+        prevBlock.nextConnection.connect(block.previousConnection);
+      }
+
+      totalCount++;
+
+      // 如果含有子容器槽位 (DO statement)
+      if (def.children && def.children.length > 0) {
+        const doInput = block.getInput("DO");
+        if (doInput && doInput.connection) {
+          const subResult = buildBlockTree(workspace, def.children, doInput.connection);
+          totalCount += subResult.count;
+        }
+      }
+
+      prevBlock = block;
+    } catch (e) {
+      console.warn(`创建积木失败 [${def.type}]:`, e);
+    }
+  }
+
+  return { firstBlock, count: totalCount };
+}
+
+/**
+ * 将 Python (build123d / CadQuery) 源码逆向解析并注入渲染至 Blockly 工作区
  */
 export function convertPythonToBlockly(
   code: string,
@@ -365,62 +566,33 @@ export function convertPythonToBlockly(
     return { success: false, blockCount: 0, message: "待转换代码为空" };
   }
 
-  const parsed = parseCadQueryCode(code);
+  const parsed = parseBuild123dCode(code);
 
   if (parsed.length === 0) {
     return {
       success: false,
       blockCount: 0,
-      message: "未在代码中识别到可转换的 CadQuery 几何特征语句（支持 Workplane、box、cylinder、circle、rect、extrude、hole、faces 等）",
+      message: "未在代码中识别到可转换的 build123d 几何建模语句（支持 BuildPart、Box、Cylinder、BuildSketch、extrude、Locations 等）",
     };
   }
 
   try {
-    // 禁用积木工作区事件广播，防止重复触发向 Monaco 同步代码
     Blockly.Events.disable();
     workspace.clear();
 
-    let prevBlock: Blockly.BlockSvg | null = null;
-    let topBlock: Blockly.BlockSvg | null = null;
-    let count = 0;
+    const { firstBlock, count } = buildBlockTree(workspace, parsed, null);
 
-    for (let i = 0; i < parsed.length; i++) {
-      const def = parsed[i];
-      try {
-        const block = workspace.newBlock(def.type) as Blockly.BlockSvg;
-
-        // 填充参数字段
-        for (const [key, val] of Object.entries(def.fields)) {
-          block.setFieldValue(val as any, key);
-        }
-
-        block.initSvg();
-        block.render();
-
-        if (i === 0) {
-          topBlock = block;
-          block.moveTo(new Blockly.utils.Coordinate(40, 40));
-        } else if (prevBlock && prevBlock.nextConnection && block.previousConnection) {
-          prevBlock.nextConnection.connect(block.previousConnection);
-        }
-
-        prevBlock = block;
-        count++;
-      } catch (blockErr) {
-        console.warn(`创建积木失败 [${def.type}]:`, blockErr);
-      }
+    if (firstBlock) {
+      firstBlock.moveTo(new Blockly.utils.Coordinate(40, 40));
+      (firstBlock as any).bumpNeighbours?.();
     }
 
     Blockly.Events.enable();
 
-    if (topBlock) {
-      (topBlock as any).bumpNeighbours?.();
-    }
-
     return {
       success: true,
       blockCount: count,
-      message: `成功解析并生成 ${count} 个 CadQuery 几何积木！`,
+      message: `成功逆向解析并还原 ${count} 个 build123d 几何积木！`,
     };
   } catch (err: any) {
     Blockly.Events.enable();
@@ -431,3 +603,6 @@ export function convertPythonToBlockly(
     };
   }
 }
+
+// 保持别名导出
+export const parseCadQueryCode = parseBuild123dCode;

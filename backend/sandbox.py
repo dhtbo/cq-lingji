@@ -11,12 +11,18 @@ import math
 import random
 import traceback
 from typing import Any, Dict, List, Optional, Tuple
-import cadquery as cq
+
+try:
+    import cadquery as cq
+except Exception:
+    cq = None
+
+import build123d as b3d
 
 logger = logging.getLogger(__name__)
 
 # 允许导入的白名单模块
-ALLOWED_MODULES = {"cadquery", "cq", "math", "random", "numpy", "np"}
+ALLOWED_MODULES = {"cadquery", "cq", "build123d", "b3d", "math", "random", "numpy", "np"}
 
 def _safe_import(name: str, *args: Any, **kwargs: Any) -> Any:
     """
@@ -126,7 +132,7 @@ class SecurityValidator(ast.NodeVisitor):
 
 def translate_cad_error(raw_error: str) -> str:
     """
-    将 OpenCASCADE / CadQuery 底层几何与语法报错翻译为直观、可操作的人类教学诊断
+    将 OpenCASCADE / build123d / CadQuery 底层几何与语法报错翻译为直观、可操作的人类教学诊断
     """
     lower = raw_error.lower()
     if "brep_api" in lower or "command not done" in lower:
@@ -140,8 +146,8 @@ def translate_cad_error(raw_error: str) -> str:
         return "💡 草图线框未闭合，无法拉伸为实体。请确保草图通过 .close() 闭合或使用了矩形/圆形等闭合图元。"
     if "standard_constructionerror" in lower or "constructionerror" in lower:
         return "💡 几何构造参数非法。请检查是否有非法的 0 或负数尺寸（如半径、直径或拉伸厚度）。"
-    if "no cadquery" in lower or "未发现" in lower:
-        return "💡 未检测到有效的 CadQuery 实体对象。请确保在代码中创建了模型并赋值给变量（如 part = ...），或使用 show_object(part) 显式展示。"
+    if "no cadquery" in lower or "未发现" in lower or "no object" in lower:
+        return "💡 未检测到有效的 3D 实体对象。请确保在代码中创建了模型（例如使用 with BuildPart() as part: ... 或 part = ...），或使用 show_object(part) 显式展示。"
     if "is not defined" in lower:
         name = raw_error.split("'")[1] if "'" in raw_error else "变量"
         return f"💡 未定义的名称 '{name}'。请检查拼写，或确认该变量在当前代码或所选时间旅行步骤中是否已初始化。"
@@ -277,12 +283,22 @@ def _run_script_worker(code: str) -> Tuple[Dict[str, Any], str, Dict[str, Any]]:
     builtins_env = dict(SAFE_BUILTINS)
     builtins_env.update(custom_cq_funcs)
 
+    # 导出 build123d 常用类与函数，使其如同 from build123d import * 一样开箱即用
+    b3d_symbols = {
+        name: getattr(b3d, name)
+        for name in dir(b3d)
+        if not name.startswith("_") and name not in FORBIDDEN_NAMES
+    }
+
     global_env = {
         "__builtins__": builtins_env,
         "cq": cq,
         "cadquery": cq,
+        "b3d": b3d,
+        "build123d": b3d,
         "math": math,
         "random": random,
+        **b3d_symbols,
         **custom_cq_funcs,
     }
     local_env: Dict[str, Any] = {}
@@ -305,7 +321,7 @@ def _compose_multi_layer_cad_object(obj: Any) -> Any:
     又正在表面绘制 2D 草图线框 (Wires) 时，
     将两者组装为 Assembly 装配体，确保 3D 视口中同时呈现实体与草图。
     """
-    if not isinstance(obj, cq.Workplane):
+    if cq is None or not isinstance(obj, cq.Workplane):
         return obj
 
     try:
@@ -384,59 +400,127 @@ def execute_cq_sandboxed(
             setattr(err, "captured_stdout", getattr(e, "captured_stdout", ""))
             raise err from e
 
-    # 4. 智能查找并提取目标 CadQuery 对象
+    # 4. 智能查找并提取目标几何对象（优先 build123d，兼容 CadQuery）
+    # 辅助：将 build123d / CadQuery 各种包装类型统一提取为几何实体
+    def _unwrap_geo(val: Any) -> Any:
+        if isinstance(val, b3d.BuildPart):
+            return val.part
+        if isinstance(val, b3d.BuildSketch):
+            return val.sketch
+        if isinstance(val, b3d.BuildLine):
+            return val.line
+        return val
+
+    def _is_geo_obj(val: Any) -> bool:
+        if isinstance(val, (b3d.BuildPart, b3d.BuildSketch, b3d.BuildLine)):
+            return True
+        if isinstance(val, (b3d.Part, b3d.Solid, b3d.Compound, b3d.Sketch, b3d.Curve, b3d.Wire, b3d.Face, b3d.Shape)):
+            return True
+        if hasattr(val, "wrapped") and "TopoDS" in type(getattr(val, "wrapped")).__name__:
+            return True
+        if isinstance(val, (cq.Workplane, cq.Shape, cq.Assembly)):
+            return True
+        return False
+
     # 优先级 1: 用户显式通过 show_object() / show() / debug() 注册的对象
     if cq_objects:
         def _parse_color(color_val):
             if not color_val:
                 return None
             try:
-                if isinstance(color_val, str):
-                    return cq.Color(color_val)
-                elif isinstance(color_val, (tuple, list)):
-                    c_vals = [c / 255.0 if any(v > 1.0 for v in color_val) else c for c in color_val]
-                    return cq.Color(*c_vals)
+                if cq is not None:
+                    if isinstance(color_val, str):
+                        return cq.Color(color_val)
+                    elif isinstance(color_val, (tuple, list)):
+                        c_vals = [c / 255.0 if any(v > 1.0 for v in color_val) else c for c in color_val]
+                        return cq.Color(*c_vals)
+                else:
+                    if isinstance(color_val, str):
+                        return b3d.Color(color_val)
+                    elif isinstance(color_val, (tuple, list)):
+                        c_vals = [c / 255.0 if any(v > 1.0 for v in color_val) else c for c in color_val]
+                        return b3d.Color(*c_vals)
             except Exception:
                 return None
             return None
 
         if len(cq_objects) == 1:
             item = list(cq_objects.values())[0]
-            part = item["shape"]
+            part = _unwrap_geo(item["shape"])
             opts = item.get("options") or {}
             color_obj = _parse_color(opts.get("color"))
-            if color_obj:
+            if color_obj and cq is not None:
                 assy = cq.Assembly()
                 assy.add(part, name=item["name"], color=color_obj)
                 return assy, steps, actual_step, captured_stdout
             return part, steps, actual_step, captured_stdout
         else:
-            # 注册了多个对象时，自动组合为 cq.Assembly 装配体
-            assy = cq.Assembly()
-            for item in cq_objects.values():
-                shape_obj = item["shape"]
-                shape_name = item["name"]
-                opts = item.get("options") or {}
-                color_obj = _parse_color(opts.get("color"))
-                assy.add(shape_obj, name=shape_name, color=color_obj)
-            return assy, steps, actual_step, captured_stdout
+            # 注册了多个对象时，自动组合为 Assembly 或 Compound
+            if cq is not None:
+                assy = cq.Assembly()
+                for item in cq_objects.values():
+                    shape_obj = _unwrap_geo(item["shape"])
+                    shape_name = item["name"]
+                    opts = item.get("options") or {}
+                    color_obj = _parse_color(opts.get("color"))
+                    assy.add(shape_obj, name=shape_name, color=color_obj)
+                return assy, steps, actual_step, captured_stdout
+            else:
+                children = [_unwrap_geo(item["shape"]) for item in cq_objects.values()]
+                compound = b3d.Compound(children=children)
+                return compound, steps, actual_step, captured_stdout
 
-    # 优先级 2: 变量名明确为 part 或 result
-    part = local_vars.get("part") or local_vars.get("result")
-    if isinstance(part, (cq.Workplane, cq.Shape, cq.Assembly)):
-        composed = _compose_multi_layer_cad_object(part)
-        return composed, steps, actual_step, captured_stdout
+    # 优先级 2: 变量名明确为 part, result, 或 model
+    target_names = ["part", "result", "model", "p", "s"]
+    for name in target_names:
+        if name in local_vars:
+            val = local_vars[name]
+            if _is_geo_obj(val):
+                geo = _unwrap_geo(val)
+                # 检查是否为 CadQuery Workplane 多图层合成
+                if cq is not None and isinstance(geo, cq.Workplane):
+                    geo = _compose_multi_layer_cad_object(geo)
+                return geo, steps, actual_step, captured_stdout
 
-    # 优先级 3: 扫描局部变量字典中的 CadQuery 实体
+    # 优先级 3: 扫描局部变量字典中的几何实体
+    found_parts = []
+    found_sketches = []
     for var_name, val in local_vars.items():
-        if isinstance(val, (cq.Workplane, cq.Shape, cq.Assembly)):
-            logger.info(f"在局部变量 '{var_name}' 中找到 CadQuery 实体")
-            composed = _compose_multi_layer_cad_object(val)
-            return composed, steps, actual_step, captured_stdout
+        if _is_geo_obj(val):
+            unwrapped = _unwrap_geo(val)
+            if isinstance(unwrapped, (b3d.Sketch, b3d.Curve, b3d.Wire, b3d.Face)):
+                found_sketches.append((var_name, unwrapped))
+            else:
+                found_parts.append((var_name, unwrapped))
+
+    if found_parts:
+        # 如果同时存在 3D 实体与正在绘制的草图，组合在装配体/复合体中一起展示
+        if found_sketches:
+            if cq is not None:
+                assy = cq.Assembly()
+                for name, p_item in found_parts:
+                    assy.add(p_item, name=name, color=cq.Color("#3b82f6"))
+                for name, s_item in found_sketches:
+                    assy.add(s_item, name=f"sketch_{name}", color=cq.Color("#f59e0b"))
+                return assy, steps, actual_step, captured_stdout
+            else:
+                all_children = [p for _, p in found_parts] + [s for _, s in found_sketches]
+                return b3d.Compound(children=all_children), steps, actual_step, captured_stdout
+        target_name, target_geo = found_parts[-1]
+        logger.info(f"在局部变量 '{target_name}' 中找到 3D 几何实体")
+        if cq is not None and isinstance(target_geo, cq.Workplane):
+            target_geo = _compose_multi_layer_cad_object(target_geo)
+        return target_geo, steps, actual_step, captured_stdout
+
+    if found_sketches:
+        # 仅有草图时直接返回草图
+        target_name, target_sketch = found_sketches[-1]
+        logger.info(f"在局部变量 '{target_name}' 中找到草图实体")
+        return target_sketch, steps, actual_step, captured_stdout
 
     # 如果是分步时间旅行回放模式，且当前语句仅为前置参数定义（尚未构建几何对象）
     if step is not None:
         return None, steps, actual_step, captured_stdout
 
-    raise ValueError(translate_cad_error("未发现 CadQuery 实体对象。请确保在代码中创建了模型并赋值给变量（如 part = ...），或通过 show_object(part) 显式展示。"))
+    raise ValueError(translate_cad_error("未检测到可渲染的 3D 实体或草图对象。请确保通过 'with BuildPart() as part:' 创建实体，或赋值给变量 (如 part = ...)。"))
 

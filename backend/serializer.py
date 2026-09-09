@@ -6,7 +6,11 @@ CAD 几何数据序列化模块
 import json
 import logging
 from typing import Any, Dict, Optional
-import cadquery as cq
+try:
+    import cadquery as cq
+except Exception:
+    cq = None
+
 from ocp_tessellate.convert import to_ocpgroup, tessellate_group, numpy_to_json
 
 logger = logging.getLogger(__name__)
@@ -39,9 +43,9 @@ def serialize_cad_object(
     alpha: float = 1.0,
 ) -> Dict[str, Any]:
     """
-    将 CadQuery 对象网格化并序列化为 three-cad-viewer 适用的 JSON 字典
+    将 build123d / CadQuery 对象网格化并序列化为 three-cad-viewer 适用的 JSON 字典
     
-    :param obj: CadQuery Workplane, Shape, 或 Assembly 对象
+    :param obj: build123d Part/Solid/Sketch 或 CadQuery Workplane/Shape/Assembly 对象
     :param name: 零件名称
     :param tolerance: 离散化线性偏差
     :param angular_tolerance: 离散化角度公差
@@ -49,15 +53,21 @@ def serialize_cad_object(
     :param alpha: 透明度 (0.0 ~ 1.0)
     :return: 包含场景层次与网格缓冲区的 JSON 字典
     """
-    # 校验 CadQuery 对象有效性
-    if isinstance(obj, cq.Workplane):
+    # 校验并提取底层 OCP 几何体（兼容 build123d 与 CadQuery）
+    target_obj = None
+    if cq is not None and isinstance(obj, cq.Workplane):
         if not obj.val():
             raise ValueError("Workplane 当前未包含有效实体")
         target_obj = obj
-    elif isinstance(obj, (cq.Shape, cq.Assembly)):
+    elif hasattr(obj, "wrapped"):
+        # build123d 的 Part, Solid, Compound, Sketch, Wire, Face 等均包含 .wrapped
+        target_obj = obj.wrapped
+    elif cq is not None and isinstance(obj, (cq.Shape, cq.Assembly)):
         target_obj = obj
+    elif hasattr(obj, "val"):
+        target_obj = obj.val().wrapped if hasattr(obj.val(), "wrapped") else obj.val()
     else:
-        raise TypeError(f"不支持的几何体类型: {type(obj)}")
+        target_obj = obj
 
     # 1. 转换为 OCP 组结构
     part_group, instances = to_ocpgroup(

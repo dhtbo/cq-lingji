@@ -1,264 +1,173 @@
 import { CATEGORY_COLORS } from "./blocks/types";
 
 /**
- * Blockly 工具箱分类与积木定义 (JSON Toolbox Definition)
+ * Blockly 工具箱分类与积木定义 (build123d Toolbox Definition)
  */
-export const CADQUERY_TOOLBOX = {
+export const BUILD123D_TOOLBOX = {
   kind: "categoryToolbox",
   contents: [
     {
       kind: "category",
-      name: "📐 基准平面与对象",
-      colour: CATEGORY_COLORS.INITIALIZER,
+      name: "🏗️ 建造者容器",
+      colour: CATEGORY_COLORS.BUILDER,
       contents: [
         {
           kind: "block",
-          type: "cq_init_workplane",
+          type: "b3d_build_part",
         },
         {
           kind: "block",
-          type: "cq_chain_workplane",
+          type: "b3d_build_sketch",
         },
         {
           kind: "block",
-          type: "cq_chain_part_ref",
+          type: "b3d_build_line",
         },
         {
           kind: "block",
-          type: "cq_chain_assign",
-        },
-        {
-          kind: "block",
-          type: "cq_comment",
+          type: "b3d_comment",
         },
       ],
     },
     {
       kind: "category",
-      name: "✏️ 2D 草图",
+      name: "🧱 3D 基础实体",
+      colour: CATEGORY_COLORS.PRIMITIVE_3D,
+      contents: [
+        {
+          kind: "block",
+          type: "b3d_box",
+        },
+        {
+          kind: "block",
+          type: "b3d_cylinder",
+        },
+        {
+          kind: "block",
+          type: "b3d_sphere",
+        },
+        {
+          kind: "block",
+          type: "b3d_cone",
+        },
+        {
+          kind: "block",
+          type: "b3d_torus",
+        },
+        {
+          kind: "block",
+          type: "b3d_wedge",
+        },
+      ],
+    },
+    {
+      kind: "category",
+      name: "✏️ 2D 草图图元",
       colour: CATEGORY_COLORS.SKETCH,
       contents: [
         {
           kind: "block",
-          type: "cq_sketch_circle",
+          type: "b3d_sketch_rect",
         },
         {
           kind: "block",
-          type: "cq_sketch_rect",
+          type: "b3d_sketch_circle",
         },
         {
           kind: "block",
-          type: "cq_sketch_polygon",
+          type: "b3d_sketch_regular_polygon",
         },
         {
           kind: "block",
-          type: "cq_sketch_polyline",
+          type: "b3d_sketch_polygon",
         },
         {
           kind: "block",
-          type: "cq_sketch_slot",
+          type: "b3d_sketch_polyline",
         },
         {
           kind: "block",
-          type: "cq_sketch_ellipse",
+          type: "b3d_sketch_slot",
         },
         {
           kind: "block",
-          type: "cq_chain_circle",
-          inputs: {
-            TARGET: {
-              shadow: {
-                type: "cq_chain_workplane",
-              },
-            },
-          },
+          type: "b3d_sketch_ellipse",
         },
         {
           kind: "block",
-          type: "cq_chain_rect",
-          inputs: {
-            TARGET: {
-              shadow: {
-                type: "cq_chain_workplane",
-              },
-            },
-          },
-        },
-        {
-          kind: "block",
-          type: "cq_chain_polygon",
-          inputs: {
-            TARGET: {
-              shadow: {
-                type: "cq_chain_workplane",
-              },
-            },
-          },
+          type: "b3d_sketch_text",
         },
       ],
     },
     {
       kind: "category",
-      name: "📦 3D 实体特征",
+      name: "📦 3D 特征操作",
       colour: CATEGORY_COLORS.OPERATION_3D,
       contents: [
         {
           kind: "block",
-          type: "cq_op_extrude",
+          type: "b3d_extrude",
         },
         {
           kind: "block",
-          type: "cq_op_hole",
+          type: "b3d_revolve",
         },
         {
           kind: "block",
-          type: "cq_op_cut_blind",
+          type: "b3d_loft",
         },
         {
           kind: "block",
-          type: "cq_op_box",
+          type: "b3d_fillet",
         },
         {
           kind: "block",
-          type: "cq_op_cylinder",
+          type: "b3d_chamfer",
         },
         {
           kind: "block",
-          type: "cq_op_sphere",
+          type: "b3d_hole",
         },
         {
           kind: "block",
-          type: "cq_op_fillet",
+          type: "b3d_offset",
         },
         {
           kind: "block",
-          type: "cq_op_chamfer",
+          type: "b3d_split",
         },
         {
           kind: "block",
-          type: "cq_op_shell",
-        },
-        {
-          kind: "block",
-          type: "cq_op_text",
-        },
-        {
-          kind: "block",
-          type: "cq_chain_extrude",
-          inputs: {
-            TARGET: {
-              shadow: {
-                type: "cq_chain_circle",
-                inputs: {
-                  TARGET: {
-                    shadow: {
-                      type: "cq_chain_workplane",
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-        {
-          kind: "block",
-          type: "cq_chain_hole",
-          inputs: {
-            TARGET: {
-              shadow: {
-                type: "cq_chain_part_ref",
-              },
-            },
-          },
-        },
-        {
-          kind: "block",
-          type: "cq_chain_cut_blind",
-          inputs: {
-            TARGET: {
-              shadow: {
-                type: "cq_chain_part_ref",
-              },
-            },
-          },
-        },
-        {
-          kind: "block",
-          type: "cq_chain_loft",
-        },
-        {
-          kind: "block",
-          type: "cq_op_cone",
-        },
-        {
-          kind: "block",
-          type: "cq_op_polar_array",
-        },
-        {
-          kind: "block",
-          type: "cq_op_revolve",
-        },
-        {
-          kind: "block",
-          type: "cq_op_cooling_slots",
+          type: "b3d_color",
         },
       ],
     },
     {
       kind: "category",
-      name: "🎯 选择与变换",
+      name: "📍 定位与阵列",
       colour: CATEGORY_COLORS.TRANSFORM,
       contents: [
         {
           kind: "block",
-          type: "cq_sel_face",
+          type: "b3d_locations",
         },
         {
           kind: "block",
-          type: "cq_sel_offset",
+          type: "b3d_grid_locations",
         },
         {
           kind: "block",
-          type: "cq_op_transform",
+          type: "b3d_polar_locations",
         },
         {
           kind: "block",
-          type: "cq_chain_face_select",
-          inputs: {
-            TARGET: {
-              shadow: {
-                type: "cq_chain_part_ref",
-              },
-            },
-          },
-        },
-        {
-          kind: "block",
-          type: "cq_chain_offset",
-          inputs: {
-            TARGET: {
-              shadow: {
-                type: "cq_chain_part_ref",
-              },
-            },
-          },
-        },
-        {
-          kind: "block",
-          type: "cq_chain_transformed",
-          inputs: {
-            TARGET: {
-              shadow: {
-                type: "cq_chain_part_ref",
-              },
-            },
-          },
+          type: "b3d_hex_locations",
         },
       ],
     },
     {
       kind: "category",
-      name: "⚙️ 教学宏与阵列",
+      name: "⚙️ 教学宏与高级",
       colour: CATEGORY_COLORS.MACRO,
       contents: [
         {
@@ -272,7 +181,78 @@ export const CADQUERY_TOOLBOX = {
       ],
     },
     {
-      kind: "sep",
+      kind: "category",
+      name: "🔢 数学运算",
+      colour: CATEGORY_COLORS.MATH,
+      contents: [
+        {
+          kind: "block",
+          type: "math_number",
+        },
+        {
+          kind: "block",
+          type: "math_arithmetic",
+        },
+        {
+          kind: "block",
+          type: "math_single",
+        },
+        {
+          kind: "block",
+          type: "math_trig",
+        },
+      ],
+    },
+    {
+      kind: "category",
+      name: "🔁 循环控制",
+      colour: CATEGORY_COLORS.LOOP,
+      contents: [
+        {
+          kind: "block",
+          type: "controls_repeat_ext",
+          inputs: {
+            TIMES: {
+              shadow: {
+                type: "math_number",
+                fields: {
+                  NUM: 4,
+                },
+              },
+            },
+          },
+        },
+        {
+          kind: "block",
+          type: "controls_for",
+          inputs: {
+            FROM: {
+              shadow: {
+                type: "math_number",
+                fields: {
+                  NUM: 1,
+                },
+              },
+            },
+            TO: {
+              shadow: {
+                type: "math_number",
+                fields: {
+                  NUM: 10,
+                },
+              },
+            },
+            BY: {
+              shadow: {
+                type: "math_number",
+                fields: {
+                  NUM: 1,
+                },
+              },
+            },
+          },
+        },
+      ],
     },
     {
       kind: "category",
@@ -293,134 +273,7 @@ export const CADQUERY_TOOLBOX = {
         },
         {
           kind: "block",
-          type: "logic_negate",
-        },
-        {
-          kind: "block",
           type: "logic_boolean",
-        },
-        {
-          kind: "block",
-          type: "logic_null",
-        },
-        {
-          kind: "block",
-          type: "logic_ternary",
-        },
-      ],
-    },
-    {
-      kind: "category",
-      name: "🔢 数学运算",
-      colour: CATEGORY_COLORS.MATH,
-      contents: [
-        {
-          kind: "block",
-          type: "math_number",
-          fields: {
-            NUM: 10,
-          },
-        },
-        {
-          kind: "block",
-          type: "math_arithmetic",
-        },
-        {
-          kind: "block",
-          type: "math_single",
-        },
-        {
-          kind: "block",
-          type: "math_trig",
-        },
-        {
-          kind: "block",
-          type: "math_constant",
-        },
-        {
-          kind: "block",
-          type: "math_number_property",
-        },
-        {
-          kind: "block",
-          type: "math_round",
-        },
-        {
-          kind: "block",
-          type: "math_modulo",
-        },
-        {
-          kind: "block",
-          type: "math_random_int",
-          inputs: {
-            FROM: {
-              shadow: {
-                type: "math_number",
-                fields: { NUM: 1 },
-              },
-            },
-            TO: {
-              shadow: {
-                type: "math_number",
-                fields: { NUM: 100 },
-              },
-            },
-          },
-        },
-        {
-          kind: "block",
-          type: "math_random_float",
-        },
-      ],
-    },
-    {
-      kind: "category",
-      name: "🔁 循环控制",
-      colour: CATEGORY_COLORS.LOOP,
-      contents: [
-        {
-          kind: "block",
-          type: "controls_repeat_ext",
-          inputs: {
-            TIMES: {
-              shadow: {
-                type: "math_number",
-                fields: { NUM: 10 },
-              },
-            },
-          },
-        },
-        {
-          kind: "block",
-          type: "controls_whileUntil",
-        },
-        {
-          kind: "block",
-          type: "controls_for",
-          inputs: {
-            FROM: {
-              shadow: {
-                type: "math_number",
-                fields: { NUM: 1 },
-              },
-            },
-            TO: {
-              shadow: {
-                type: "math_number",
-                fields: { NUM: 10 },
-              },
-            },
-            BY: {
-              shadow: {
-                type: "math_number",
-                fields: { NUM: 1 },
-              },
-            },
-          },
-        },
-        {
-          kind: "block",
-          type: "controls_flow_statements",
         },
       ],
     },
@@ -430,11 +283,8 @@ export const CADQUERY_TOOLBOX = {
       colour: CATEGORY_COLORS.VARIABLE,
       custom: "VARIABLE",
     },
-    {
-      kind: "category",
-      name: "⚡ 函数",
-      colour: CATEGORY_COLORS.PROCEDURE,
-      custom: "PROCEDURE",
-    },
   ],
 };
+
+// 保持别名兼容
+export const CADQUERY_TOOLBOX = BUILD123D_TOOLBOX;

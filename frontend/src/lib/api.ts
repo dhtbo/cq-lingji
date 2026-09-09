@@ -22,9 +22,9 @@ export interface RenderResult {
 }
 
 /**
- * 请求后端渲染 CadQuery 脚本并获取网格数据，支持单步时间旅行
+ * 请求后端渲染 build123d / CadQuery 脚本并获取网格数据，支持单步时间旅行
  */
-export async function renderCadQueryCode(
+export async function renderBuild123dCode(
   code: string,
   options: {
     step?: number;
@@ -33,7 +33,7 @@ export async function renderCadQueryCode(
     color?: string;
   } = {}
 ): Promise<RenderResult> {
-  const response = await fetch(`${API_BASE}/api/v1/render/cq`, {
+  const response = await fetch(`${API_BASE}/api/v1/render/b3d`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -54,6 +54,8 @@ export async function renderCadQueryCode(
 
   return await response.json();
 }
+
+export const renderCadQueryCode = renderBuild123dCode;
 
 /**
  * 触发 STL 或 STEP 文件下载

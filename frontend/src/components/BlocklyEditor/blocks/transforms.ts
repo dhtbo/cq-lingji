@@ -133,4 +133,86 @@ export function registerTransformBlocks() {
       this.setTooltip("向传入的 CadQuery 目标应用旋转与位移变换");
     },
   };
+
+  // ==================== build123d 定位与阵列容器积木 ====================
+
+  // b3d Locations: with Locations((x, y, z)):
+  Blockly.Blocks["b3d_locations"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("📍 空间定位 Locations")
+        .appendField("X:")
+        .appendField(new Blockly.FieldNumber(0), "X")
+        .appendField("Y:")
+        .appendField(new Blockly.FieldNumber(0), "Y")
+        .appendField("Z:")
+        .appendField(new Blockly.FieldNumber(0), "Z");
+      this.appendStatementInput("DO")
+        .appendField("在此位置放置:");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.TRANSFORM);
+      this.setTooltip("build123d Locations：指定内部图元或实体的放置空间坐标");
+    },
+  };
+
+  // b3d GridLocations: with GridLocations(x_spacing, y_spacing, x_count, y_count):
+  Blockly.Blocks["b3d_grid_locations"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("▦ 矩形网格阵列 GridLocations")
+        .appendField("X间距:")
+        .appendField(new Blockly.FieldNumber(15, 0.1), "X_SPACING")
+        .appendField("Y间距:")
+        .appendField(new Blockly.FieldNumber(15, 0.1), "Y_SPACING")
+        .appendField("X数量:")
+        .appendField(new Blockly.FieldNumber(3, 1, 50, 1), "X_COUNT")
+        .appendField("Y数量:")
+        .appendField(new Blockly.FieldNumber(3, 1, 50, 1), "Y_COUNT");
+      this.appendStatementInput("DO")
+        .appendField("阵列实体/孔:");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.TRANSFORM);
+      this.setTooltip("build123d GridLocations：在矩形网格点上批量阵列生成内部特征");
+    },
+  };
+
+  // b3d PolarLocations: with PolarLocations(radius, count):
+  Blockly.Blocks["b3d_polar_locations"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("⭕ 环形极坐标阵列 PolarLocations")
+        .appendField("分布半径 R:")
+        .appendField(new Blockly.FieldNumber(20, 0.1), "RADIUS")
+        .appendField("数量:")
+        .appendField(new Blockly.FieldNumber(6, 1, 100, 1), "COUNT");
+      this.appendStatementInput("DO")
+        .appendField("周向阵列:");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.TRANSFORM);
+      this.setTooltip("build123d PolarLocations：围绕圆心周向均布阵列内部特征（如环形螺栓孔）");
+    },
+  };
+
+  // b3d HexLocations: with HexLocations(apothem, x_count, y_count):
+  Blockly.Blocks["b3d_hex_locations"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("🐝 蜂窝六边形阵列 HexLocations")
+        .appendField("边心距:")
+        .appendField(new Blockly.FieldNumber(10, 0.1), "APOTHEM")
+        .appendField("X数量:")
+        .appendField(new Blockly.FieldNumber(3, 1, 20, 1), "X_COUNT")
+        .appendField("Y数量:")
+        .appendField(new Blockly.FieldNumber(3, 1, 20, 1), "Y_COUNT");
+      this.appendStatementInput("DO")
+        .appendField("蜂窝阵列:");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(CATEGORY_COLORS.TRANSFORM);
+      this.setTooltip("build123d HexLocations：蜂窝六边形紧密排列阵列");
+    },
+  };
 }
