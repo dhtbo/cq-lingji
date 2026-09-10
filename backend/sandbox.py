@@ -822,56 +822,124 @@ def execute_cq_sandboxed(
             return True
         return False
 
+    def _is_b3d_shape(obj: Any) -> bool:
+        if obj is None:
+            return False
+        if b3d is not None and isinstance(obj, (b3d.Shape, b3d.Compound, b3d.Part, b3d.Solid, b3d.Face, b3d.Wire, b3d.Edge, b3d.Sketch)):
+            return True
+        if hasattr(obj, "wrapped") and type(obj).__module__.startswith("build123d"):
+            return True
+        return False
+
+    def _parse_b3d_color(color_val: Any) -> Any:
+        if not color_val:
+            return None
+        try:
+            if isinstance(color_val, b3d.Color):
+                return color_val
+            if isinstance(color_val, str):
+                return b3d.Color(color_val)
+            if isinstance(color_val, (tuple, list)):
+                c_vals = [c / 255.0 if any(v > 1.0 for v in color_val) else c for c in color_val]
+                return b3d.Color(*c_vals)
+        except Exception:
+            return None
+        return None
+
+    def _parse_cq_color(color_val: Any) -> Any:
+        if not color_val or cq is None:
+            return None
+        try:
+            if isinstance(color_val, cq.Color):
+                return color_val
+            if isinstance(color_val, str):
+                return cq.Color(color_val)
+            if isinstance(color_val, (tuple, list)):
+                c_vals = [c / 255.0 if any(v > 1.0 for v in color_val) else c for c in color_val]
+                return cq.Color(*c_vals)
+        except Exception:
+            return None
+        return None
+
     # 优先级 1: 用户显式通过 show_object() / show() / debug() 注册的对象
     if cq_objects:
-        def _parse_color(color_val):
-            if not color_val:
-                return None
-            try:
-                if cq is not None:
-                    if isinstance(color_val, str):
-                        return cq.Color(color_val)
-                    elif isinstance(color_val, (tuple, list)):
-                        c_vals = [c / 255.0 if any(v > 1.0 for v in color_val) else c for c in color_val]
-                        return cq.Color(*c_vals)
-                else:
-                    if isinstance(color_val, str):
-                        return b3d.Color(color_val)
-                    elif isinstance(color_val, (tuple, list)):
-                        c_vals = [c / 255.0 if any(v > 1.0 for v in color_val) else c for c in color_val]
-                        return b3d.Color(*c_vals)
-            except Exception:
-                return None
-            return None
-
         if len(cq_objects) == 1:
             item = list(cq_objects.values())[0]
             part = _unwrap_geo(item["shape"])
             opts = item.get("options") or {}
-            color_obj = _parse_color(opts.get("color"))
-            if color_obj and cq is not None:
-                assy = cq.Assembly()
-                assy.add(part, name=item["name"], color=color_obj)
-                return assy, steps, actual_step, captured_stdout
-            return part, steps, actual_step, captured_stdout
+            color_val = opts.get("color")
+            if _is_b3d_shape(part):
+                if color_val:
+                    b3d_c = _parse_b3d_color(color_val)
+                    if b3d_c is not None:
+                        try:
+                            part.color = b3d_c
+                        except Exception:
+                            pass
+                if item.get("name") and hasattr(part, "label"):
+                    try:
+                        part.label = item["name"]
+                    except Exception:
+                        pass
+                return part, steps, actual_step, captured_stdout
+            else:
+                color_obj = _parse_cq_color(color_val)
+                if color_obj and cq is not None:
+                    assy = cq.Assembly()
+                    assy.add(part, name=item["name"], color=color_obj)
+                    return assy, steps, actual_step, captured_stdout
+                return part, steps, actual_step, captured_stdout
         else:
             # 注册了多个对象时，自动组合为 Assembly 或 Compound
-            if cq is not None:
-                assy = cq.Assembly()
-                for item in cq_objects.values():
-                    shape_obj = _unwrap_geo(item["shape"])
-                    shape_name = item["name"]
-                    opts = item.get("options") or {}
-                    color_obj = _parse_color(opts.get("color"))
-                    assy.add(shape_obj, name=shape_name, color=color_obj)
-                return assy, steps, actual_step, captured_stdout
-            else:
-                children = [_unwrap_geo(item["shape"]) for item in cq_objects.values()]
-                valid_children = [c for c in children if c is not None]
-                if len(valid_children) == 1:
-                    return valid_children[0], steps, actual_step, captured_stdout
-                compound = b3d.Compound(children=valid_children)
+            items_unwrapped = []
+            for item in cq_objects.values():
+                shape_obj = _unwrap_geo(item["shape"])
+                if shape_obj is not None:
+                    items_unwrapped.append((item["name"], shape_obj, item.get("options") or {}))
+
+            if not items_unwrapped:
+                return None, steps, actual_step, captured_stdout
+
+            # 判断是否所有对象都是 build123d 对象（或者没有 CadQuery Workplane/Shape）
+            has_cq = any(cq is not None and isinstance(s, (cq.Workplane, cq.Shape, cq.Assembly)) for _, s, _ in items_unwrapped)
+            all_b3d = not has_cq and all(_is_b3d_shape(s) for _, s, _ in items_unwrapped)
+
+            if all_b3d or (b3d is not None and not has_cq):
+                # 纯 build123d 体系：构建包含独立着色与命名 child 的 b3d.Compound
+                b3d_children = []
+                for name, shape_obj, opts in items_unwrapped:
+                    color_val = opts.get("color")
+                    if color_val:
+                        b3d_c = _parse_b3d_color(color_val)
+                        if b3d_c is not None:
+                            try:
+                                shape_obj.color = b3d_c
+                            except Exception:
+                                pass
+                    if name and hasattr(shape_obj, "label"):
+                        try:
+                            shape_obj.label = name
+                        except Exception:
+                            pass
+                    b3d_children.append(shape_obj)
+                compound = b3d.Compound(children=b3d_children)
                 return compound, steps, actual_step, captured_stdout
+            else:
+                # 包含 CadQuery 对象或混合体系：使用 CadQuery Assembly
+                if cq is not None:
+                    assy = cq.Assembly()
+                    for name, shape_obj, opts in items_unwrapped:
+                        color_obj = _parse_cq_color(opts.get("color"))
+                        if _is_b3d_shape(shape_obj):
+                            # 将 build123d Shape 转换为 cq.Shape，确保 Assembly 兼容
+                            shape_to_add = cq.Shape.cast(shape_obj.wrapped)
+                        else:
+                            shape_to_add = shape_obj
+                        assy.add(shape_to_add, name=name, color=color_obj)
+                    return assy, steps, actual_step, captured_stdout
+                else:
+                    valid_children = [s for _, s, _ in items_unwrapped]
+                    return b3d.Compound(children=valid_children), steps, actual_step, captured_stdout
 
     # 优先级 2: 变量名明确为 part, result, 或 model (含 t, turtle)
     target_names = ["part", "result", "model", "p", "s", "t", "turtle", "turtle_model"]
@@ -914,33 +982,51 @@ def execute_cq_sandboxed(
     if found_parts:
         # 如果同时存在 3D 实体与正在绘制的草图，组合在装配体/复合体中一起展示
         if found_sketches:
-            if cq is not None:
+            all_shapes = [p for _, p, _ in found_parts if p is not None] + [s for _, s, _ in found_sketches if s is not None]
+            has_cq = any(cq is not None and isinstance(s, (cq.Workplane, cq.Shape, cq.Assembly)) for s in all_shapes)
+            if not has_cq and b3d is not None:
+                # 纯 build123d 体系
+                for _, p, _ in found_parts:
+                    if p is not None and not getattr(p, "color", None):
+                        try:
+                            p.color = b3d.Color("#3b82f6")
+                        except Exception:
+                            pass
+                for _, s, _ in found_sketches:
+                    if s is not None and not getattr(s, "color", None):
+                        try:
+                            s.color = b3d.Color("#f59e0b")
+                        except Exception:
+                            pass
+                return b3d.Compound(children=all_shapes), steps, actual_step, captured_stdout
+            elif cq is not None:
                 assy = cq.Assembly()
                 for name, p_item, _ in found_parts:
                     if p_item is not None:
-                        assy.add(p_item, name=name, color=cq.Color("#3b82f6"))
+                        s_add = cq.Shape.cast(p_item.wrapped) if _is_b3d_shape(p_item) else p_item
+                        assy.add(s_add, name=name, color=cq.Color("#3b82f6"))
                 for name, s_item, _ in found_sketches:
                     if s_item is not None:
-                        assy.add(s_item, name=f"sketch_{name}", color=cq.Color("#f59e0b"))
+                        s_add = cq.Shape.cast(s_item.wrapped) if _is_b3d_shape(s_item) else s_item
+                        assy.add(s_add, name=f"sketch_{name}", color=cq.Color("#f59e0b"))
                 return assy, steps, actual_step, captured_stdout
             else:
-                valid_children = [p for _, p, _ in found_parts if p is not None] + [s for _, s, _ in found_sketches if s is not None]
-                if len(valid_children) == 1:
-                    return valid_children[0], steps, actual_step, captured_stdout
-                return b3d.Compound(children=valid_children), steps, actual_step, captured_stdout
+                return b3d.Compound(children=all_shapes), steps, actual_step, captured_stdout
 
         if len(found_parts) > 1:
-            if cq is not None:
+            all_parts = [p for _, p, _ in found_parts if p is not None]
+            has_cq = any(cq is not None and isinstance(p, (cq.Workplane, cq.Shape, cq.Assembly)) for p in all_parts)
+            if not has_cq and b3d is not None:
+                return b3d.Compound(children=all_parts), steps, actual_step, captured_stdout
+            elif cq is not None:
                 assy = cq.Assembly()
                 for name, p_item, _ in found_parts:
                     if p_item is not None:
-                        assy.add(p_item, name=name)
+                        s_add = cq.Shape.cast(p_item.wrapped) if _is_b3d_shape(p_item) else p_item
+                        assy.add(s_add, name=name)
                 return assy, steps, actual_step, captured_stdout
             else:
-                valid_parts = [p for _, p, _ in found_parts if p is not None]
-                if len(valid_parts) == 1:
-                    return valid_parts[0], steps, actual_step, captured_stdout
-                return b3d.Compound(children=valid_parts), steps, actual_step, captured_stdout
+                return b3d.Compound(children=all_parts), steps, actual_step, captured_stdout
 
         target_name, target_geo, _ = found_parts[-1]
         logger.info(f"在局部变量 '{target_name}' 中找到 3D 几何实体")
