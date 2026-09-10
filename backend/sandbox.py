@@ -27,7 +27,21 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # 允许导入的白名单模块
-ALLOWED_MODULES = {"cadquery", "cq", "build123d", "b3d", "math", "random", "numpy", "np"}
+ALLOWED_MODULES = {
+    "cadquery",
+    "cq",
+    "build123d",
+    "b3d",
+    "math",
+    "random",
+    "numpy",
+    "np",
+    "typing",
+    "itertools",
+    "functools",
+    "collections",
+    "dataclasses",
+}
 
 def _safe_import(name: str, *args: Any, **kwargs: Any) -> Any:
     """
@@ -38,39 +52,140 @@ def _safe_import(name: str, *args: Any, **kwargs: Any) -> Any:
         return __import__(name, *args, **kwargs)
     raise ImportError(f"安全沙箱禁止导入模块: '{name}'。仅允许: {', '.join(ALLOWED_MODULES)}")
 
-# 允许的安全内置函数与常量
+# 允许访问的合法魔术属性与方法（排除 __class__, __subclasses__, __globals__, __code__, __dict__, __bases__, __mro__ 等内部反射逃逸属性）
+ALLOWED_MAGIC_ATTRS = {
+    "__init__",
+    "__enter__",
+    "__exit__",
+    "__call__",
+    "__str__",
+    "__repr__",
+    "__len__",
+    "__iter__",
+    "__next__",
+    "__getitem__",
+    "__setitem__",
+    "__delitem__",
+    "__contains__",
+    "__eq__",
+    "__ne__",
+    "__lt__",
+    "__le__",
+    "__gt__",
+    "__ge__",
+    "__add__",
+    "__sub__",
+    "__mul__",
+    "__truediv__",
+    "__floordiv__",
+    "__mod__",
+    "__pow__",
+    "__radd__",
+    "__rsub__",
+    "__rmul__",
+    "__rtruediv__",
+    "__rfloordiv__",
+    "__rmod__",
+    "__rpow__",
+    "__iadd__",
+    "__isub__",
+    "__imul__",
+    "__itruediv__",
+    "__ifloordiv__",
+    "__imod__",
+    "__ipow__",
+    "__and__",
+    "__or__",
+    "__xor__",
+    "__invert__",
+    "__neg__",
+    "__pos__",
+    "__abs__",
+    "__hash__",
+    "__bool__",
+    "__name__",
+    "__doc__",
+    "__module__",
+}
+
+def _safe_getattr(obj: Any, name: str, *default: Any) -> Any:
+    """受限安全 getattr，防止通过 getattr(obj, '__class__') 绕过 AST 检查"""
+    if name.startswith("__") and name.endswith("__") and name not in ALLOWED_MAGIC_ATTRS:
+        raise AttributeError(f"安全沙箱禁止访问受限属性: '{name}'")
+    if default:
+        return getattr(obj, name, default[0])
+    return getattr(obj, name)
+
+def _safe_hasattr(obj: Any, name: str) -> bool:
+    """受限安全 hasattr"""
+    if name.startswith("__") and name.endswith("__") and name not in ALLOWED_MAGIC_ATTRS:
+        return False
+    return hasattr(obj, name)
+
+def _safe_setattr(obj: Any, name: str, value: Any) -> None:
+    """受限安全 setattr，禁止篡改内部属性"""
+    if name.startswith("__") and name.endswith("__") and name not in ALLOWED_MAGIC_ATTRS:
+        raise AttributeError(f"安全沙箱禁止修改受限属性: '{name}'")
+    setattr(obj, name, value)
+
+# 允许的安全内置函数与常量（全面支持函数式与面向对象 class/super）
 SAFE_BUILTINS: Dict[str, Any] = {
     "__import__": _safe_import,
+    "__build_class__": __build_class__,
+    "__name__": "__main__",
+    "__doc__": None,
     "abs": abs,
     "all": all,
     "any": any,
     "bool": bool,
+    "callable": callable,
+    "classmethod": classmethod,
     "dict": dict,
     "divmod": divmod,
     "enumerate": enumerate,
     "float": float,
     "format": format,
+    "getattr": _safe_getattr,
+    "hasattr": _safe_hasattr,
+    "id": id,
     "int": int,
     "isinstance": isinstance,
     "issubclass": issubclass,
+    "iter": iter,
     "len": len,
     "list": list,
     "max": max,
     "min": min,
+    "next": next,
     "pow": pow,
     "print": print,
+    "property": property,
     "range": range,
+    "repr": repr,
     "reversed": reversed,
     "round": round,
     "set": set,
+    "setattr": _safe_setattr,
+    "slice": slice,
     "sorted": sorted,
+    "staticmethod": staticmethod,
     "str": str,
     "sum": sum,
+    "super": super,
     "tuple": tuple,
     "zip": zip,
     "True": True,
     "False": False,
     "None": None,
+    # 常用标准异常类型
+    "Exception": Exception,
+    "ValueError": ValueError,
+    "TypeError": TypeError,
+    "KeyError": KeyError,
+    "IndexError": IndexError,
+    "RuntimeError": RuntimeError,
+    "AttributeError": AttributeError,
+    "ZeroDivisionError": ZeroDivisionError,
 }
 
 # 严格禁止的危险标识符与内建调用
@@ -131,7 +246,8 @@ class SecurityValidator(ast.NodeVisitor):
     def visit_Attribute(self, node: ast.Attribute) -> None:
         # 防范双下划线属性反射穿透（如 __class__, __subclasses__, __globals__）
         if node.attr.startswith("__") and node.attr.endswith("__"):
-            self.errors.append(f"行 {node.lineno}: 禁止访问私有内部属性 '{node.attr}'")
+            if node.attr not in ALLOWED_MAGIC_ATTRS:
+                self.errors.append(f"行 {node.lineno}: 禁止访问私有内部属性 '{node.attr}'")
         self.generic_visit(node)
 
 
@@ -296,6 +412,8 @@ def _run_script_worker(code: str) -> Tuple[Dict[str, Any], str, Dict[str, Any]]:
     }
 
     global_env = {
+        "__name__": "__main__",
+        "__doc__": None,
         "__builtins__": builtins_env,
         "cq": cq,
         "cadquery": cq,
@@ -684,6 +802,22 @@ def execute_cq_sandboxed(
     # 如果是分步时间旅行回放模式，且当前语句仅为前置参数定义（尚未构建几何对象）
     if step is not None:
         return None, steps, actual_step, captured_stdout
+
+    # 优先级 4: 用户定义了自定义几何类（继承自 Compound / Part / Solid / Shape 等）但尚未实例化
+    geo_classes = [
+        name for name, val in local_vars.items()
+        if isinstance(val, type) and (
+            issubclass(val, (b3d.Shape, b3d.Compound, b3d.Part, b3d.Solid, b3d.Sketch)) or
+            (cq is not None and issubclass(val, (cq.Shape, cq.Workplane)))
+        )
+    ]
+    if geo_classes:
+        class_name = geo_classes[-1]
+        raise ValueError(
+            f"💡 已成功定义 3D 组件类 '{class_name}'，但尚未对其进行实例化。\n"
+            f"请在代码末尾添加实例化语句以在 3D 视口中呈现，例如：\n"
+            f"part = {class_name}(...)"
+        )
 
     raise ValueError(translate_cad_error("未检测到可渲染的 3D 实体或草图对象。请确保通过 'with BuildPart() as part:' 创建实体，或赋值给变量 (如 part = ...)。"))
 
