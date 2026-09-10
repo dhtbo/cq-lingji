@@ -19,6 +19,11 @@ except Exception:
 
 import build123d as b3d
 
+try:
+    from backend.turtle3d import Turtle3D
+except ImportError:
+    from turtle3d import Turtle3D
+
 logger = logging.getLogger(__name__)
 
 # 允许导入的白名单模块
@@ -298,6 +303,7 @@ def _run_script_worker(code: str) -> Tuple[Dict[str, Any], str, Dict[str, Any]]:
         "build123d": b3d,
         "math": math,
         "random": random,
+        "Turtle3D": Turtle3D,
         **b3d_symbols,
         **custom_cq_funcs,
     }
@@ -461,9 +467,17 @@ def execute_cq_sandboxed(
                     pass
             return res
 
+        if isinstance(val, Turtle3D):
+            try:
+                return val.part
+            except Exception:
+                return None
+
         return val
 
     def _is_geo_obj(val: Any) -> bool:
+        if isinstance(val, Turtle3D):
+            return True
         if isinstance(val, b3d.BuildPart):
             try:
                 if val.part is not None:
@@ -542,8 +556,8 @@ def execute_cq_sandboxed(
                 compound = b3d.Compound(children=valid_children)
                 return compound, steps, actual_step, captured_stdout
 
-    # 优先级 2: 变量名明确为 part, result, 或 model
-    target_names = ["part", "result", "model", "p", "s"]
+    # 优先级 2: 变量名明确为 part, result, 或 model (含 t, turtle)
+    target_names = ["part", "result", "model", "p", "s", "t", "turtle", "turtle_model"]
     for name in target_names:
         if name in local_vars:
             val = local_vars[name]

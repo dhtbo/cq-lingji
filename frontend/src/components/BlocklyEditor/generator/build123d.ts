@@ -482,6 +482,94 @@ export function registerBuild123dGenerator() {
     return `    with BuildSketch() as sk:\n        Slot2D(length=${length}, width=${diameter}, rotation=${angle})\n`;
   };
 
+  // ================= 3D 空间海龟绘图 (LogoUp 3D Turtle) =================
+
+  pythonGenerator.forBlock["b3d_turtle3d_container"] = function (block: Blockly.Block) {
+    const varName = block.getFieldValue("VAR_NAME") || "t";
+    const radius = block.getFieldValue("RADIUS") ?? 1.0;
+    const color = block.getFieldValue("COLOR") || "#10b981";
+    const branchCode = pythonGenerator.statementToCode(block, "DO") || "    pass\n";
+    return `with Turtle3D(radius=${radius}, color="${color}") as ${varName}:\n${branchCode}\n`;
+  };
+
+  pythonGenerator.forBlock["b3d_turtle3d_forward"] = function (block: Blockly.Block) {
+    const varName = block.getFieldValue("VAR_NAME") || "t";
+    const dir = block.getFieldValue("DIR") || "FORWARD";
+    const dist = block.getFieldValue("DISTANCE") ?? 20;
+    if (dir === "BACKWARD") {
+      return `${varName}.backward(${dist})\n`;
+    }
+    return `${varName}.forward(${dist})\n`;
+  };
+
+  pythonGenerator.forBlock["b3d_turtle3d_turn"] = function (block: Blockly.Block) {
+    const varName = block.getFieldValue("VAR_NAME") || "t";
+    const dir = block.getFieldValue("DIR") || "LEFT";
+    const ang = block.getFieldValue("ANGLE") ?? 90;
+    if (dir === "RIGHT") {
+      return `${varName}.turn_right(${ang})\n`;
+    }
+    return `${varName}.turn_left(${ang})\n`;
+  };
+
+  pythonGenerator.forBlock["b3d_turtle3d_pitch"] = function (block: Blockly.Block) {
+    const varName = block.getFieldValue("VAR_NAME") || "t";
+    const dir = block.getFieldValue("DIR") || "UP";
+    const ang = block.getFieldValue("ANGLE") ?? 45;
+    if (dir === "DOWN") {
+      return `${varName}.pitch_down(${ang})\n`;
+    }
+    return `${varName}.pitch_up(${ang})\n`;
+  };
+
+  pythonGenerator.forBlock["b3d_turtle3d_roll"] = function (block: Blockly.Block) {
+    const varName = block.getFieldValue("VAR_NAME") || "t";
+    const dir = block.getFieldValue("DIR") || "LEFT";
+    const ang = block.getFieldValue("ANGLE") ?? 45;
+    if (dir === "RIGHT") {
+      return `${varName}.roll_right(${ang})\n`;
+    }
+    return `${varName}.roll_left(${ang})\n`;
+  };
+
+  pythonGenerator.forBlock["b3d_turtle3d_arc"] = function (block: Blockly.Block) {
+    const varName = block.getFieldValue("VAR_NAME") || "t";
+    const dir = block.getFieldValue("DIR") || "LEFT";
+    const rad = block.getFieldValue("RADIUS") ?? 15;
+    const ang = block.getFieldValue("ANGLE") ?? 90;
+    const fnMap: Record<string, string> = {
+      LEFT: "arc_left",
+      RIGHT: "arc_right",
+      UP: "arc_up",
+      DOWN: "arc_down",
+    };
+    const fn = fnMap[dir] || "arc_left";
+    return `${varName}.${fn}(${rad}, ${ang})\n`;
+  };
+
+  pythonGenerator.forBlock["b3d_turtle3d_pen"] = function (block: Blockly.Block) {
+    const varName = block.getFieldValue("VAR_NAME") || "t";
+    const state = block.getFieldValue("STATE") || "DOWN";
+    return state === "UP" ? `${varName}.pen_up()\n` : `${varName}.pen_down()\n`;
+  };
+
+  pythonGenerator.forBlock["b3d_turtle3d_set_radius"] = function (block: Blockly.Block) {
+    const varName = block.getFieldValue("VAR_NAME") || "t";
+    const rad = block.getFieldValue("RADIUS") ?? 1.5;
+    return `${varName}.set_radius(${rad})\n`;
+  };
+
+  pythonGenerator.forBlock["b3d_turtle3d_branch"] = function (block: Blockly.Block) {
+    const varName = block.getFieldValue("VAR_NAME") || "t";
+    const branchCode = pythonGenerator.statementToCode(block, "BRANCH") || "";
+    return `${varName}.push()\n${branchCode}${varName}.pop()\n`;
+  };
+
+  pythonGenerator.forBlock["b3d_turtle3d_home"] = function (block: Blockly.Block) {
+    const varName = block.getFieldValue("VAR_NAME") || "t";
+    return `${varName}.home()\n`;
+  };
+
   generatorRegistered = true;
 }
 

@@ -5,6 +5,7 @@ import { registerTransformBlocks } from "./transforms";
 import { registerMacroBlocks } from "./macros";
 import { registerCommentBlocks } from "./comments";
 import { registerVariableBlocks } from "./variables";
+import { registerTurtle3DBlocks } from "./turtle3d";
 
 let initialized = false;
 
@@ -20,6 +21,7 @@ export function registerAllBuild123dBlocks() {
   registerMacroBlocks();
   registerCommentBlocks();
   registerVariableBlocks();
+  registerTurtle3DBlocks();
   initialized = true;
 }
 

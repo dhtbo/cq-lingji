@@ -110,3 +110,62 @@ export async function checkBackendHealth(): Promise<boolean> {
     return false;
   }
 }
+
+export interface PrintCheckItem {
+  name: string;
+  passed: boolean;
+  level: "success" | "warning" | "error";
+  detail: string;
+}
+
+export interface PrintabilityReport {
+  status: "success" | "warning" | "error";
+  message?: string;
+  score?: number;
+  grade?: string;
+  dimensions?: {
+    x: number;
+    y: number;
+    z: number;
+  };
+  fits_bed?: boolean;
+  bed_size?: [number, number, number];
+  volume_cm3?: number;
+  area_cm2?: number;
+  is_watertight?: boolean;
+  is_solid?: boolean;
+  solids_count?: number;
+  estimated_filament_g?: number;
+  estimated_hours?: number;
+  checks?: PrintCheckItem[];
+  suggestions?: string[];
+}
+
+/**
+ * 3D 打印体检接口请求
+ */
+export async function analyzeCadPrintability(
+  code: string,
+  bedSize: { x: number; y: number; z: number } = { x: 220, y: 220, z: 250 }
+): Promise<PrintabilityReport> {
+  const response = await fetch(`${API_BASE}/api/v1/analyze/printability`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      code,
+      bed_x: bedSize.x,
+      bed_y: bedSize.y,
+      bed_z: bedSize.z,
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ detail: "体检服务响应异常" }));
+    throw new Error(err.detail || "体检服务响应异常");
+  }
+
+  return await response.json();
+}
+

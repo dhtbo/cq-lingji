@@ -331,8 +331,8 @@ export function parseBuild123dCode(code: string): ParsedBlockDef[] {
 
   const blocks: ParsedBlockDef[] = [];
 
-  // 当前激活的容器栈: { indent: number, block: ParsedBlockDef }
-  const stack: { indent: number; block: ParsedBlockDef }[] = [];
+  // 当前激活的容器栈: { indent: number, block: ParsedBlockDef, isExplicitClose?: boolean }
+  const stack: { indent: number; block: ParsedBlockDef; isExplicitClose?: boolean }[] = [];
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
     const rawLine = lines[lineIndex];
@@ -354,9 +354,20 @@ export function parseBuild123dCode(code: string): ParsedBlockDef[] {
     // 计算当前行缩进空格数
     const indent = rawLine.search(/\S|$/);
 
-    // 弹出缩进比当前行更深或相等的容器
-    while (stack.length > 0 && stack[stack.length - 1].indent >= indent) {
-      stack.pop();
+    // 弹出缩进比当前行更深或相等的容器 (若为显式闭合容器如 branch 则仅在当前行缩进严格小于其起始缩进时弹出)
+    while (stack.length > 0) {
+      const top = stack[stack.length - 1];
+      if (top.isExplicitClose) {
+        if (indent < top.indent) {
+          stack.pop();
+        } else {
+          break;
+        }
+      } else if (top.indent >= indent) {
+        stack.pop();
+      } else {
+        break;
+      }
     }
 
     const currentContainer = stack.length > 0 ? stack[stack.length - 1].block : null;
@@ -472,6 +483,34 @@ export function parseBuild123dCode(code: string): ParsedBlockDef[] {
       const block: ParsedBlockDef = {
         type: "b3d_build_line",
         fields: { VAR_NAME: varName },
+        children: [],
+      };
+      addBlock(block);
+      stack.push({ indent, block });
+      continue;
+    }
+
+    // 3.5 with Turtle3D(...) 3D 空间海龟绘图容器
+    if (/(?:^|\s|\b)with\s+Turtle3D\s*\(/i.test(trimmed)) {
+      const call = extractWithBlockCall(trimmed, "Turtle3D");
+      let radius = "1.0";
+      let color = "#10b981";
+      if (call && call.argsStr) {
+        const args = splitTopLevelArgs(call.argsStr);
+        for (const arg of args) {
+          if (/^radius\s*=/i.test(arg)) radius = arg.replace(/^radius\s*=\s*/i, "").trim();
+          else if (/^color\s*=/i.test(arg)) color = arg.replace(/^color\s*=\s*["']?([^"']+)["']?/i, "$1").trim();
+          else if (!arg.includes("=")) radius = arg.trim();
+        }
+      }
+      const varName = call && call.alias ? call.alias : "t";
+      const block: ParsedBlockDef = {
+        type: "b3d_turtle3d_container",
+        fields: {
+          VAR_NAME: varName,
+          RADIUS: Number(radius) || 1.0,
+          COLOR: color,
+        },
         children: [],
       };
       addBlock(block);
@@ -1302,6 +1341,192 @@ export function parseBuild123dCode(code: string): ParsedBlockDef[] {
       continue;
     }
 
+    // 25.6 3D 空间海龟绘图方法识别 (LogoUp 3D Turtle)
+    // t.forward / t.fd / t.backward / t.bk
+    const turtleMoveMatch = trimmed.match(/^([a-zA-Z_]\w*)\.(forward|fd|backward|bk)\s*\((.*)\)/i);
+    if (turtleMoveMatch) {
+      const vName = turtleMoveMatch[1];
+      const fn = turtleMoveMatch[2].toLowerCase();
+      const dist = turtleMoveMatch[3].trim() || "20";
+      const dir = (fn === "backward" || fn === "bk") ? "BACKWARD" : "FORWARD";
+      addBlock({
+        type: "b3d_turtle3d_forward",
+        fields: {
+          VAR_NAME: vName,
+          DIR: dir,
+          DISTANCE: Number(dist) || 20,
+        },
+      });
+      continue;
+    }
+
+    // t.turn_left / t.lt / t.turn_right / t.rt / t.turn
+    const turtleTurnMatch = trimmed.match(/^([a-zA-Z_]\w*)\.(turn_left|lt|turn_right|rt|turn)\s*\((.*)\)/i);
+    if (turtleTurnMatch) {
+      const vName = turtleTurnMatch[1];
+      const fn = turtleTurnMatch[2].toLowerCase();
+      let rawAng = turtleTurnMatch[3].trim() || "90";
+      let numAng = Number(rawAng);
+      let dir = (fn === "turn_right" || fn === "rt") ? "RIGHT" : "LEFT";
+      if (fn === "turn") {
+        if (!isNaN(numAng) && numAng < 0) {
+          dir = "LEFT";
+          numAng = Math.abs(numAng);
+        } else {
+          dir = "RIGHT";
+        }
+      }
+      addBlock({
+        type: "b3d_turtle3d_turn",
+        fields: {
+          VAR_NAME: vName,
+          DIR: dir,
+          ANGLE: !isNaN(numAng) ? numAng : 90,
+        },
+      });
+      continue;
+    }
+
+    // t.pitch_up / t.up / t.pitch_down / t.down / t.pitch
+    const turtlePitchMatch = trimmed.match(/^([a-zA-Z_]\w*)\.(pitch_up|up_turn|up|pitch_down|down_turn|down|pitch)\s*\((.*)\)/i);
+    if (turtlePitchMatch) {
+      const vName = turtlePitchMatch[1];
+      const fn = turtlePitchMatch[2].toLowerCase();
+      let rawAng = turtlePitchMatch[3].trim() || "45";
+      let numAng = Number(rawAng);
+      let dir = fn.includes("down") ? "DOWN" : "UP";
+      if (fn === "pitch") {
+        if (!isNaN(numAng) && numAng < 0) {
+          dir = "DOWN";
+          numAng = Math.abs(numAng);
+        } else {
+          dir = "UP";
+        }
+      }
+      addBlock({
+        type: "b3d_turtle3d_pitch",
+        fields: {
+          VAR_NAME: vName,
+          DIR: dir,
+          ANGLE: !isNaN(numAng) ? numAng : 45,
+        },
+      });
+      continue;
+    }
+
+    // t.roll_left / t.roll_l / t.roll_right / t.roll_r / t.roll
+    const turtleRollMatch = trimmed.match(/^([a-zA-Z_]\w*)\.(roll_left|roll_l|roll_right|roll_r|roll)\s*\((.*)\)/i);
+    if (turtleRollMatch) {
+      const vName = turtleRollMatch[1];
+      const fn = turtleRollMatch[2].toLowerCase();
+      let rawAng = turtleRollMatch[3].trim() || "45";
+      let numAng = Number(rawAng);
+      let dir = (fn.includes("right") || fn === "roll_r" || fn === "roll") ? "RIGHT" : "LEFT";
+      if (fn === "roll" && !isNaN(numAng) && numAng < 0) {
+        dir = "LEFT";
+        numAng = Math.abs(numAng);
+      }
+      addBlock({
+        type: "b3d_turtle3d_roll",
+        fields: {
+          VAR_NAME: vName,
+          DIR: dir,
+          ANGLE: !isNaN(numAng) ? numAng : 45,
+        },
+      });
+      continue;
+    }
+
+    // t.arc_left / t.arc_right / t.arc_up / t.arc_down
+    const turtleArcMatch = trimmed.match(/^([a-zA-Z_]\w*)\.(arc_left|arc_right|arc_up|arc_down)\s*\((.*)\)/i);
+    if (turtleArcMatch) {
+      const vName = turtleArcMatch[1];
+      const fn = turtleArcMatch[2].toLowerCase();
+      const args = splitTopLevelArgs(turtleArcMatch[3]);
+      const rad = args[0] || "15";
+      const ang = args[1] || "90";
+      let dir = "LEFT";
+      if (fn === "arc_right") dir = "RIGHT";
+      else if (fn === "arc_up") dir = "UP";
+      else if (fn === "arc_down") dir = "DOWN";
+      addBlock({
+        type: "b3d_turtle3d_arc",
+        fields: {
+          VAR_NAME: vName,
+          DIR: dir,
+          RADIUS: Number(rad) || 15,
+          ANGLE: Number(ang) || 90,
+        },
+      });
+      continue;
+    }
+
+    // t.pen_down / t.pd / t.pen_up / t.pu
+    const turtlePenMatch = trimmed.match(/^([a-zA-Z_]\w*)\.(pen_down|pd|pen_up|pu)\s*\(\)/i);
+    if (turtlePenMatch) {
+      const vName = turtlePenMatch[1];
+      const fn = turtlePenMatch[2].toLowerCase();
+      const state = (fn === "pen_up" || fn === "pu") ? "UP" : "DOWN";
+      addBlock({
+        type: "b3d_turtle3d_pen",
+        fields: {
+          VAR_NAME: vName,
+          STATE: state,
+        },
+      });
+      continue;
+    }
+
+    // t.set_radius
+    const turtleRadMatch = trimmed.match(/^([a-zA-Z_]\w*)\.set_radius\s*\((.*)\)/i);
+    if (turtleRadMatch) {
+      const vName = turtleRadMatch[1];
+      const rad = turtleRadMatch[2].trim() || "1.5";
+      addBlock({
+        type: "b3d_turtle3d_set_radius",
+        fields: {
+          VAR_NAME: vName,
+          RADIUS: Number(rad) || 1.5,
+        },
+      });
+      continue;
+    }
+
+    // t.home
+    const turtleHomeMatch = trimmed.match(/^([a-zA-Z_]\w*)\.home\s*\(\)/i);
+    if (turtleHomeMatch) {
+      const vName = turtleHomeMatch[1];
+      addBlock({
+        type: "b3d_turtle3d_home",
+        fields: {
+          VAR_NAME: vName,
+        },
+      });
+      continue;
+    }
+
+    // t.push() -> open branch container
+    const turtlePushMatch = trimmed.match(/^([a-zA-Z_]\w*)\.push\s*\(\)/i);
+    if (turtlePushMatch) {
+      const vName = turtlePushMatch[1];
+      const block: ParsedBlockDef = {
+        type: "b3d_turtle3d_branch",
+        fields: { VAR_NAME: vName },
+        children: [],
+      };
+      addBlock(block);
+      stack.push({ indent, block, isExplicitClose: true });
+      continue;
+    }
+
+    // t.pop() -> close branch container
+    if (/^[a-zA-Z_]\w*\.pop\s*\(\)/i.test(trimmed)) {
+      if (stack.length > 0 && stack[stack.length - 1].block.type === "b3d_turtle3d_branch") {
+        stack.pop();
+      }
+      continue;
+    }
+
     // 25.8 变量赋值与多变量复合解构赋值识别 (如 length, width, thickness = 80.0, 60.0, 10.0 或 hole_dia = 6.0)
     const assignMatch = splitTopLevelAssignment(trimmed);
     if (assignMatch) {
@@ -1338,7 +1563,11 @@ export function parseBuild123dCode(code: string): ParsedBlockDef[] {
 
   // 仅当包含需要 BuildPart 容器的 3D 实体/特征，且未被任何顶层容器包裹时，才自动包裹首层 BuildPart
   const hasAnyContainer = blocks.some(
-    (b) => b.type === "b3d_build_part" || b.type === "b3d_build_sketch" || b.type === "b3d_build_line"
+    (b) =>
+      b.type === "b3d_build_part" ||
+      b.type === "b3d_build_sketch" ||
+      b.type === "b3d_build_line" ||
+      b.type === "b3d_turtle3d_container"
   );
   const requiresPartContainer = blocks.some((b) =>
     [

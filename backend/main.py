@@ -19,6 +19,10 @@ import build123d as b3d
 
 from backend.sandbox import execute_cq_sandboxed
 from backend.serializer import serialize_cad_object
+try:
+    from backend.print_checker import analyze_cad_printability
+except ImportError:
+    from print_checker import analyze_cad_printability
 
 # 配置日志
 logging.basicConfig(
@@ -255,3 +259,35 @@ async def export_step(req: ExportRequest):
             "Access-Control-Expose-Headers": "Content-Disposition"
         }
     )
+
+
+class PrintabilityRequest(BaseModel):
+    code: str = Field(..., description="待体检的 CAD 建模 Python 脚本")
+    bed_x: Optional[float] = Field(220.0, description="热床最大成型尺寸 X (mm)")
+    bed_y: Optional[float] = Field(220.0, description="热床最大成型尺寸 Y (mm)")
+    bed_z: Optional[float] = Field(250.0, description="热床最大成型尺寸 Z (mm)")
+
+
+@app.post("/api/v1/analyze/printability")
+async def analyze_printability(req: PrintabilityRequest):
+    """
+    3D 打印前置体检与流形/成型尺寸检测接口
+    """
+    code_text = req.code.strip()
+    if not code_text:
+        raise HTTPException(status_code=400, detail="代码不能为空")
+
+    try:
+        part, *_ = execute_cq_sandboxed(code_text, timeout=5.0)
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"代码执行或生成实体失败: {e}",
+        }
+
+    res = analyze_cad_printability(
+        part,
+        bed_size=(req.bed_x or 220.0, req.bed_y or 220.0, req.bed_z or 250.0)
+    )
+    return res
+

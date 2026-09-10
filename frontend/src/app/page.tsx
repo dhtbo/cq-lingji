@@ -8,6 +8,7 @@ import { HeaderToolbar, ViewMode } from "@/components/HeaderToolbar/HeaderToolba
 import { PythonEditor } from "@/components/MonacoEditor/PythonEditor";
 import { CadTemplate } from "@/components/Templates/cadTemplates";
 import { MissionModal } from "@/components/Missions/MissionModal";
+import { PrintCheckerModal } from "@/components/PrintChecker/PrintCheckerModal";
 import { AiDrawer } from "@/components/AiAssistant/AiDrawer";
 import { ColorPalettePopover } from "@/components/ColorPalette/ColorPalettePopover";
 import {
@@ -136,6 +137,9 @@ export default function StudioPage() {
 
   // 启发式教学挑战关卡模态窗状态
   const [isMissionOpen, setIsMissionOpen] = useState<boolean>(false);
+
+  // 3D 打印体检模态窗状态 (LogoUp 3D)
+  const [isPrintCheckerOpen, setIsPrintCheckerOpen] = useState<boolean>(false);
 
   // 编辑器设置状态与持久化
   const [settings, setSettings] = useState<EditorSettings>(DEFAULT_EDITOR_SETTINGS);
@@ -464,6 +468,17 @@ export default function StudioPage() {
     },
     [viewMode, code]
   );
+
+  // 暴露给外部或自动化测试的无损注入接口
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      (window as any).__setStudioCode = (newCode: string) => {
+        setIsLocked(false);
+        setCode(newCode);
+        performRender(newCode);
+      };
+    }
+  }, [performRender]);
 
   // 全局快捷键绑定 (Ctrl+Enter 运行渲染, Ctrl+S 保存/导出 STEP, Ctrl+F 搜索)
   useEffect(() => {
@@ -859,6 +874,7 @@ export default function StudioPage() {
         saveToastMsg={saveToastMsg}
         onSelectTemplate={handleSelectTemplate}
         onOpenMissions={() => setIsMissionOpen(true)}
+        onOpenPrintChecker={() => setIsPrintCheckerOpen(true)}
         loading={loading}
         execTime={execTime}
         backendOnline={backendOnline}
@@ -1158,6 +1174,15 @@ export default function StudioPage() {
         onClose={() => setIsMissionOpen(false)}
         currentCode={code}
         onLoadMissionCode={handleLoadMissionCode}
+        settings={settings}
+      />
+
+      {/* 3D 打印体检与流形评估弹窗 (LogoUp 3D) */}
+      <PrintCheckerModal
+        isOpen={isPrintCheckerOpen}
+        onClose={() => setIsPrintCheckerOpen(false)}
+        code={code}
+        onExportStl={handleExportStl}
         settings={settings}
       />
 

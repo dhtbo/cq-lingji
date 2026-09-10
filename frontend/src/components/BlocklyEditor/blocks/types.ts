@@ -16,6 +16,7 @@ export const CATEGORY_COLORS = {
   LOOP: "#10b981",        // 绿色 - 循环控制
   VARIABLE: "#f59e0b",    // 琥珀 - 变量
   PROCEDURE: "#ec4899",   // 粉色 - 函数过程
+  TURTLE: "#10b981",      // 翡翠绿 - 3D 空间海龟绘图
 };
 
 export const CQ_TYPES = {

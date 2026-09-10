@@ -941,6 +941,145 @@ with BuildPart() as part:
     Hole(radius=6, depth=12)
 `,
     hint: "RegularPolygon(radius=14, side_count=3) 生成正三角形核心星，配合 side_count=8 的八角底座与同心环，呈现极具未来科技感的航天勋章总成。",
-    karpathyNote: "恭喜你完成了全部 16 关火星拓荒者挑战！从第一行代码到全套物理实体，你已经掌握了用代码创造三维物理世界的全部钥匙。",
+    karpathyNote: "恭喜你完成了火星拓荒者核心挑战！从第一行代码到全套物理实体，你已经掌握了用代码创造三维物理世界的全部钥匙。",
+  },
+  // ================= 阶段五：LogoUp 3D 空间海龟航行 (L17 - L19) =================
+  {
+    id: "logoup-l17",
+    stage: "阶段五：LogoUp 3D 空间海龟航行",
+    title: "L17: 初识 3D 空间小海龟",
+    subtitle: "从平面 Logo 到 3D 标架旋转与立体管道成型",
+    level: "L17",
+    tagColor: "text-emerald-400 border-emerald-500/30 bg-emerald-500/10",
+    goalDescription:
+      "引入 LogoUp 3D 经典海龟绘图范式！使用 with Turtle3D(radius=2.0) as t 启动 3D 空间海龟，控制它向前漫游 30mm，随后偏航转弯 90 度并向上俯仰抬升 45 度再前进 25mm，生成平滑流动的实体管道。",
+    learningPoints: [
+      "理解 3D 空间海龟标架（局部正交基：前进、航向偏转、俯仰倾斜）",
+      "使用 Turtle3D 连续熔接实体管道，保证 100% 封闭流形",
+      "对比传统平面 Logo 与空间 3D 实体海龟的范式升级",
+    ],
+    checkpoints: [
+      { text: "初始化 3D 海龟 (Turtle3D)", regex: /Turtle3D\s*\(/ },
+      { text: "向前爬行 (forward)", regex: /t\.forward\s*\(/ },
+      { text: "空间偏航航向转弯 (turn)", regex: /t\.turn\s*\(/ },
+      { text: "俯仰爬升角度控制 (pitch)", regex: /t\.pitch\s*\(/ },
+    ],
+    starterCode: `from build123d import *
+
+# Task: 使用 3D 空间海龟，沿着立体路径游走并生成实体管道
+with Turtle3D(radius=2.0) as t:
+    t.forward(30)
+    # 提示:
+    # t.turn(90)   # 航向向右转 90 度
+    # t.pitch(45)  # 向上仰头 45 度
+    # t.forward(25)
+`,
+    solutionCode: `from build123d import *
+
+# 3D 空间小海龟：航向转向与俯仰爬升
+with Turtle3D(radius=2.0) as t:
+    t.forward(30)
+    t.turn(90)
+    t.pitch(45)
+    t.forward(25)
+`,
+    hint: "t.turn(90) 改变偏航角（Yaw），t.pitch(45) 改变俯仰角（Pitch）。最后再调用 t.forward(25) 即可沿着仰角立体爬升。",
+    karpathyNote: "在 LogoUp 3D 体系中，海龟不再局限于二维画布，它携带一个自由旋转的 3D 局部坐标系，直接在虚空之中拉伸出实体几何。",
+  },
+  {
+    id: "logoup-l18",
+    stage: "阶段五：LogoUp 3D 空间海龟航行",
+    title: "L18: 3D 空间螺旋升腾管道",
+    subtitle: "程序循环与空间连续多轴耦合运动",
+    level: "L18",
+    tagColor: "text-emerald-400 border-emerald-500/30 bg-emerald-500/10",
+    goalDescription:
+      "利用 Python 循环控制海龟连续漫游：在每一次迭代中前进一小步，同时按固定步长偏航与抬升，让小海龟在空中舞出一段优雅的 3D 螺旋线立体管道。",
+    learningPoints: [
+      "循环结构 (for / range) 与几何形态生成的结合",
+      "离散步长逼近连续空间三维螺旋曲线 (Helix)",
+      "自相交防护：通过关节球自动熔接避免 OpenCASCADE 扫掠崩溃",
+    ],
+    checkpoints: [
+      { text: "初始化 3D 海龟 (Turtle3D)", regex: /Turtle3D\s*\(/ },
+      { text: "使用循环结构 (for ... in range)", regex: /for\s+\w+\s+in\s+range/ },
+      { text: "连续前进与转向组合 (forward & turn & pitch)", regex: /t\.forward[\s\S]*t\.turn[\s\S]*t\.pitch/ },
+    ],
+    starterCode: `from build123d import *
+
+# Task: 编写 30 次循环，让海龟每次 forward(6), turn(18), pitch(8)
+with Turtle3D(radius=2.5) as t:
+    # 在此补全 for 循环
+    pass
+`,
+    solutionCode: `from build123d import *
+
+# 空间三维连续螺旋升腾管道
+with Turtle3D(radius=2.5) as t:
+    for i in range(30):
+        t.forward(6)
+        t.turn(18)
+        t.pitch(8)
+`,
+    hint: "每次转动 18 度，20 次正好旋转一周 360 度，持续 30 次并配合 pitch(8) 抬头即可生成 1.5 圈的三维升腾螺旋管。",
+    karpathyNote: "简单的局部规则 + 大量迭代 = 复杂的宏观秩序。这是自然界分形和生命的数学密码，也是代码造物的最高美感。",
+  },
+  {
+    id: "logoup-l19",
+    stage: "阶段五：LogoUp 3D 空间海龟航行",
+    title: "L19: 空间分形与状态分支栈",
+    subtitle: "push / pop 状态记忆栈与树状分叉结构",
+    level: "L19",
+    tagColor: "text-emerald-400 border-emerald-500/30 bg-emerald-500/10",
+    goalDescription:
+      "掌握 Logo 经典的分支栈 (push/pop) 机制！海龟向前生成主干后，用 t.push() 存下当前空间位姿，拐向一侧绘制左支；再用 t.pop() 瞬间瞬移回分叉点，拐向另一侧绘制右支，构建 3D 空间分叉树。",
+    learningPoints: [
+      "海龟状态栈原理：先进后出 (LIFO) 存储位置与 3D 姿态朝向",
+      "在 CAD 中使用分支栈构建分形树状网络",
+      "可转为图形积木中的「空间分支容器」",
+    ],
+    checkpoints: [
+      { text: "主干生成 (forward)", regex: /t\.forward\s*\(/ },
+      { text: "位姿压栈 (t.push)", regex: /t\.push\s*\(\s*\)/ },
+      { text: "位姿出栈恢复 (t.pop)", regex: /t\.pop\s*\(\s*\)/ },
+    ],
+    starterCode: `from build123d import *
+
+# Task: 使用 t.push() 与 t.pop() 完成二叉分支结构
+with Turtle3D(radius=2.0) as t:
+    t.forward(25)  # 主干
+    
+    # 左侧分叉
+    t.push()
+    t.turn(-40)
+    t.pitch(20)
+    t.forward(18)
+    t.pop()  # 恢复到分叉处
+
+    # 请补全右侧分叉 (向右 turn(40), pitch(20), forward(18))
+`,
+    solutionCode: `from build123d import *
+
+# 空间海龟分支栈：二叉树枝结构
+with Turtle3D(radius=2.0) as t:
+    t.forward(25)  # 树干
+    
+    # 左分支
+    t.push()
+    t.turn(-40)
+    t.pitch(20)
+    t.forward(18)
+    t.pop()
+
+    # 右分支
+    t.push()
+    t.turn(40)
+    t.pitch(20)
+    t.forward(18)
+    t.pop()
+`,
+    hint: "每遇到一个分叉点，先 t.push() 保存现场，分支绘制完毕后 t.pop() 恢复现场，就可以在同一个节点伸展出多条枝丫。",
+    karpathyNote: "状态栈是计算机科学最优雅的发明之一。有了栈，线性的时间就能在三维空间中绽放出无限层级的树状结构。",
   },
 ];
+

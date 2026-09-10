@@ -67,6 +67,53 @@ export const BUILD123D_TOOLBOX = {
     },
     {
       kind: "category",
+      name: "🐢 3D 海龟绘图",
+      colour: CATEGORY_COLORS.TURTLE,
+      contents: [
+        {
+          kind: "block",
+          type: "b3d_turtle3d_container",
+        },
+        {
+          kind: "block",
+          type: "b3d_turtle3d_forward",
+        },
+        {
+          kind: "block",
+          type: "b3d_turtle3d_turn",
+        },
+        {
+          kind: "block",
+          type: "b3d_turtle3d_pitch",
+        },
+        {
+          kind: "block",
+          type: "b3d_turtle3d_roll",
+        },
+        {
+          kind: "block",
+          type: "b3d_turtle3d_arc",
+        },
+        {
+          kind: "block",
+          type: "b3d_turtle3d_branch",
+        },
+        {
+          kind: "block",
+          type: "b3d_turtle3d_set_radius",
+        },
+        {
+          kind: "block",
+          type: "b3d_turtle3d_pen",
+        },
+        {
+          kind: "block",
+          type: "b3d_turtle3d_home",
+        },
+      ],
+    },
+    {
+      kind: "category",
       name: "🧱 3D 基础实体",
       colour: CATEGORY_COLORS.PRIMITIVE_3D,
       contents: [
@@ -412,6 +459,12 @@ export const BUILD123D_TOOLBOX = {
           type: "b3d_custom_code",
         },
       ],
+    },
+    {
+      kind: "category",
+      name: "⚙️ 自定义函数",
+      custom: "PROCEDURE",
+      colour: CATEGORY_COLORS.PROCEDURE,
     },
   ],
 };

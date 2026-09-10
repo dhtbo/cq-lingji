@@ -31,11 +31,12 @@ interface MissionModalProps {
 }
 
 const STAGES = [
-  { id: "all", label: "全部 (16)" },
-  { id: "阶段一：先锋着陆舱", label: "阶段一：先锋着陆舱 (4)" },
-  { id: "阶段二：六轮火星车", label: "阶段二：六轮漫游车 (4)" },
-  { id: "阶段三：原位主基地", label: "阶段三：原位主基地 (4)" },
-  { id: "阶段四：场景大总装", label: "阶段四：全景大总装 (4)" },
+  { id: "all", label: `全部 (${CAD_MISSIONS.length})` },
+  { id: "阶段一：先锋着陆舱", label: "阶段一：先锋着陆舱" },
+  { id: "阶段二：六轮火星车", label: "阶段二：六轮漫游车" },
+  { id: "阶段三：原位主基地", label: "阶段三：原位主基地" },
+  { id: "阶段四：场景大总装", label: "阶段四：全景大总装" },
+  { id: "阶段五：LogoUp 3D 空间海龟航行", label: "阶段五：LogoUp 3D 空间海龟 (3)" },
 ];
 
 export const MissionModal: React.FC<MissionModalProps> = ({
@@ -107,7 +108,7 @@ export const MissionModal: React.FC<MissionModalProps> = ({
             <div>
               <div className="flex items-center space-x-2">
                 <h2 className={`text-sm font-bold tracking-wide ${isLight ? "text-gray-900" : "text-white"}`}>
-                  火星拓荒者计划 · 16 关构造型挑战
+                  火星拓荒者计划 · {CAD_MISSIONS.length} 关造型与空间海龟挑战
                 </h2>
                 <span
                   className="text-[10px] px-2 py-0.5 rounded-full font-bold border transition-colors"
@@ -121,7 +122,7 @@ export const MissionModal: React.FC<MissionModalProps> = ({
                 </span>
               </div>
               <p className={`text-[11px] ${isLight ? "text-gray-500" : "text-gray-400"}`}>
-                从空间基准、回转体、布尔差集切削到原位建造与全场景星际大总装
+                从空间基准、回转体、布尔差集切削到原位建造与 3D 空间海龟航行
               </p>
             </div>
           </div>

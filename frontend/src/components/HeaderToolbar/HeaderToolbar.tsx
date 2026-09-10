@@ -22,6 +22,7 @@ import {
   FileUp,
   FileDown,
   FolderOpen,
+  Printer,
 } from "lucide-react";
 import { CAD_TEMPLATES, CadTemplate } from "../Templates/cadTemplates";
 import { HelpModal } from "./HelpModal";
@@ -51,6 +52,7 @@ interface HeaderToolbarProps {
   saveToastMsg?: string | null;
   onSelectTemplate: (template: CadTemplate) => void;
   onOpenMissions?: () => void;
+  onOpenPrintChecker?: () => void;
   loading: boolean;
   execTime?: number | null;
   backendOnline: boolean;
@@ -77,6 +79,7 @@ export const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
   saveToastMsg,
   onSelectTemplate,
   onOpenMissions,
+  onOpenPrintChecker,
   loading,
   execTime,
   backendOnline,
@@ -285,6 +288,21 @@ export const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
                   </span>
                   <span className="text-[10px] bg-teal-100 text-teal-700 px-1 rounded font-mono">CAD</span>
                 </button>
+                {onOpenPrintChecker && (
+                  <button
+                    onClick={() => {
+                      onOpenPrintChecker();
+                      setShowFileMenu(false);
+                    }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-amber-50 hover:text-amber-700 flex items-center justify-between"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Printer size={13} className="text-emerald-600" />
+                      <span>3D打印体检与流形评估</span>
+                    </span>
+                    <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1 rounded font-mono">Check</span>
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     onExportStl();
@@ -468,6 +486,18 @@ export const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
 
         {/* 右侧：保存、分享、登录 */}
         <div className="flex items-center space-x-2">
+          {/* 3D 打印体检按钮 (LogoUp 3D 特色) */}
+          {onOpenPrintChecker && (
+            <button
+              onClick={onOpenPrintChecker}
+              title="3D 打印前置体检（流形检查、尺寸合规、耗材与工时估算）"
+              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs transition active:scale-95 flex items-center space-x-1"
+            >
+              <Printer size={13} />
+              <span>打印体检</span>
+            </button>
+          )}
+
           {/* 保存按钮 (活力橙 #FF8C1A) */}
           <button
             onClick={onSave}

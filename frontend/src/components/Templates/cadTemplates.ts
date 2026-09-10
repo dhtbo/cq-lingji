@@ -40,6 +40,74 @@ with BuildPart() as part:
 `,
   },
   {
+    id: "logoup_spiral_helix",
+    name: "🐢 3D空间螺旋管道 (LogoUp 3D 经典)",
+    description: "LogoUp 3D 核心代表作：利用 3D 空间海龟 (Turtle3D) 的连续偏航与俯仰动作生成平滑空间螺旋线",
+    code: `from build123d import *
+
+# LogoUp 3D 经典案例：3D 空间海龟螺旋管道
+with Turtle3D(radius=1.5, color="#10b981") as t:
+    for i in range(48):
+        t.forward(12)
+        t.turn_left(15)
+        t.pitch_up(8)
+`,
+  },
+  {
+    id: "logoup_fractal_tree",
+    name: "🌿 3D分形递归树 (LogoUp 3D 经典)",
+    description: "LogoUp 3D 递归分形艺术：利用状态堆栈 push/pop 与函数自递归生成立体三维迎客松树枝",
+    code: `from build123d import *
+
+# LogoUp 3D 经典分形：3D 分形递归树
+with Turtle3D(radius=1.8, color="#059669") as t:
+    def draw_branch(length, radius, depth):
+        if depth <= 0:
+            return
+        t.set_radius(radius)
+        t.forward(length)
+        
+        # 分支 1 (向左上方生长)
+        t.push()
+        t.turn_left(30)
+        t.pitch_up(25)
+        draw_branch(length * 0.75, radius * 0.7, depth - 1)
+        t.pop()
+        
+        # 分支 2 (向右上方生长)
+        t.push()
+        t.turn_right(30)
+        t.pitch_up(25)
+        draw_branch(length * 0.75, radius * 0.7, depth - 1)
+        t.pop()
+
+    t.pitch_up(90)
+    draw_branch(30.0, 2.5, 3)
+`,
+  },
+  {
+    id: "logoup_spiral_staircase",
+    name: "🏛️ 参数化旋转楼梯 (LogoUp 3D 经典)",
+    description: "经典建筑结构：中心支撑柱与 24 级螺旋环绕踏板，直接面向 3D 打印",
+    code: `from build123d import *
+
+steps_count = 20
+step_height = 4.0
+step_angle = 18.0
+stair_width = 30.0
+
+with BuildPart() as stairs:
+    # 中心立柱
+    Cylinder(radius=5, height=steps_count * step_height)
+    # 逐级螺旋踏板
+    for i in range(steps_count):
+        with Locations((0, 0, i * step_height)):
+            with Locations(Rotation(0, 0, i * step_angle)):
+                with Locations((stair_width / 2, 0, 0)):
+                    Box(stair_width, 10, step_height)
+`,
+  },
+  {
     id: "bearing_assembly",
     name: "⚙️ 工业球轴承 (Bearing Assembly)",
     description: "机械工程基石：外圈、内圈滚道与 8 颗环形均布滚珠 (PolarLocations)",
