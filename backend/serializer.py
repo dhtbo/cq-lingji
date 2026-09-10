@@ -27,8 +27,26 @@ except Exception:
     cq = None
 
 from ocp_tessellate.convert import to_ocpgroup, tessellate_group, numpy_to_json
+import ocp_tessellate.convert as ocp_convert
 
 logger = logging.getLogger(__name__)
+
+# 修复 ocp_tessellate.convert.compute_quality 在微小三角面 (如离散 STL 网格资产、狭长三角形或微型特征零件) 下
+# 舍入结果为 0.0，直接导致 OpenCASCADE 底层抛出 BRepMesh_IncrementalMesh::initParameters : invalid parameter value 的缺陷
+_orig_compute_quality = ocp_convert.compute_quality
+
+def _safe_compute_quality(bb, deviation: float = 0.1) -> float:
+    try:
+        q = _orig_compute_quality(bb, deviation=deviation)
+    except Exception:
+        q = None
+    # 确保 quality 严格大于 1e-4，防止 OpenCASCADE BRepMesh_IncrementalMesh::initParameters 崩溃
+    safe_min = max(float(deviation) * 0.01 if deviation else 0.001, 1e-4)
+    if q is None or q <= 1e-5:
+        return safe_min
+    return q
+
+ocp_convert.compute_quality = _safe_compute_quality
 
 def _decode_instances(instances: list, shapes: dict) -> None:
     """
@@ -115,12 +133,21 @@ def serialize_cad_object(
         alphas=[alpha],
     )
 
-    # 2. 调用 ocp-tessellate 进行网格离散化
+    # 2. 调用 ocp-tessellate 进行网格离散化 (严格限制公差下限，防止出现负数或 0 导致的崩溃)
+    safe_tolerance = max(float(tolerance) if tolerance else 0.01, 1e-4)
+    safe_angular_tolerance = max(float(angular_tolerance) if angular_tolerance else 0.1, 0.01)
+
     tess_kwargs = {
-        "deviation": tolerance,
-        "angular_tolerance": angular_tolerance,
+        "deviation": safe_tolerance,
+        "angular_tolerance": safe_angular_tolerance,
     }
-    instances, shapes, _ = tessellate_group(part_group, instances, kwargs=tess_kwargs)
+    try:
+        instances, shapes, _ = tessellate_group(part_group, instances, kwargs=tess_kwargs)
+    except Exception as e:
+        logger.warning(f"首次网格离散化遇到异常: {e}，尝试以安全放宽公差降级网格化重试...")
+        tess_kwargs["deviation"] = max(safe_tolerance * 2, 0.05)
+        tess_kwargs["angular_tolerance"] = max(safe_angular_tolerance * 2, 0.2)
+        instances, shapes, _ = tessellate_group(part_group, instances, kwargs=tess_kwargs)
 
     # 3. 解包引用实例
     _decode_instances(instances, shapes)

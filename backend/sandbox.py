@@ -3,13 +3,17 @@
 负责 CadQuery 脚本的 AST 语法安全静态检查、执行超时熔断、错误教学翻译与分步特征提取
 """
 import ast
+import base64
 import concurrent.futures
 import contextlib
 import io
 import logging
 import math
+import os
 import random
+import shutil
 import sys
+import tempfile
 import types
 import traceback
 from typing import Any, Dict, List, Optional, Tuple
@@ -616,12 +620,57 @@ def _run_script_worker(
     }
     local_env: Dict[str, Any] = {}
 
+    temp_dir = None
+    old_cwd = None
+    if files:
+        try:
+            temp_dir = tempfile.mkdtemp(prefix="lingji_proj_")
+            old_cwd = os.getcwd()
+            for f_path, f_content in files.items():
+                if not f_content:
+                    continue
+                clean_path = f_path.replace("\\", "/").lstrip("/")
+                full_target = os.path.join(temp_dir, clean_path)
+                os.makedirs(os.path.dirname(full_target), exist_ok=True)
+                if f_content.startswith("data:") and ";base64," in f_content:
+                    b64_str = f_content.split(";base64,")[1]
+                    try:
+                        f_bytes = base64.b64decode(b64_str)
+                        with open(full_target, "wb") as f_out:
+                            f_out.write(f_bytes)
+                    except Exception:
+                        pass
+                else:
+                    with open(full_target, "w", encoding="utf-8") as f_out:
+                        f_out.write(f_content)
+            os.chdir(temp_dir)
+            if temp_dir not in sys.path:
+                sys.path.insert(0, temp_dir)
+        except Exception as err:
+            logger.warning(f"为工程文件建立临时工作目录失败: {err}")
+
     try:
         with contextlib.redirect_stdout(stdout_buf):
             exec(code, global_env, local_env)
     except Exception as e:
         setattr(e, "captured_stdout", stdout_buf.getvalue())
         raise e
+    finally:
+        if old_cwd:
+            try:
+                os.chdir(old_cwd)
+            except Exception:
+                pass
+        if temp_dir:
+            if temp_dir in sys.path:
+                try:
+                    sys.path.remove(temp_dir)
+                except Exception:
+                    pass
+            try:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            except Exception:
+                pass
 
     return local_env, stdout_buf.getvalue(), cq_objects
 
