@@ -29,6 +29,8 @@ interface PrintCheckerModalProps {
   code: string;
   onExportStl?: () => void;
   settings?: EditorSettings;
+  files?: Record<string, string>;
+  entrypoint?: string;
 }
 
 // 常见 3D 打印机热床预设
@@ -45,6 +47,8 @@ export const PrintCheckerModal: React.FC<PrintCheckerModalProps> = ({
   code,
   onExportStl,
   settings,
+  files,
+  entrypoint,
 }) => {
   const [bedSize, setBedSize] = useState({ x: 220, y: 220, z: 250 });
   const [loading, setLoading] = useState(false);
@@ -62,14 +66,14 @@ export const PrintCheckerModal: React.FC<PrintCheckerModalProps> = ({
   const primaryBadgeBg = isYellowTheme ? "#FFDB29" : themeColor;
 
   const runAnalysis = useCallback(async () => {
-    if (!code.trim()) {
+    if (!code.trim() && (!files || Object.keys(files).length === 0)) {
       setError("当前工程无代码，请先编写建模代码或载入案例");
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      const res = await analyzeCadPrintability(code, bedSize);
+      const res = await analyzeCadPrintability(code, bedSize, files, entrypoint);
       setReport(res);
       if (res.status === "error" && res.message) {
         setError(res.message);
@@ -79,7 +83,7 @@ export const PrintCheckerModal: React.FC<PrintCheckerModalProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [code, bedSize]);
+  }, [code, bedSize, files, entrypoint]);
 
   useEffect(() => {
     if (isOpen) {

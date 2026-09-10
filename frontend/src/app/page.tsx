@@ -17,12 +17,27 @@ import {
   DEFAULT_EDITOR_SETTINGS,
 } from "@/components/EditorSettings/EditorSettingsModal";
 import {
+  saveWorkspaceToLocalStorage,
+  loadWorkspaceFromLocalStorage,
   saveProjectToLocalStorage,
   loadProjectFromLocalStorage,
   downloadPythonFile,
+  exportWorkspaceArchiveFile,
   exportProjectArchive,
-  readProjectFile,
+  readProjectOrWorkspaceFile,
 } from "@/lib/projectStorage";
+import { ProjectWorkspace, NodeType } from "@/types/project";
+import {
+  createDefaultProject,
+  getFlatFiles,
+  findNodeByPath,
+  addNode,
+  deleteNode,
+  renameNode,
+  updateFileContent,
+  setEntrypoint,
+} from "@/lib/projectTree";
+import { ProjectExplorer, EditorTabs } from "@/components/ProjectExplorer/ProjectExplorer";
 import { convertPythonToBlockly } from "@/lib/pythonToBlockly";
 import { convertBuild123dToCadQuery } from "@/lib/build123dToCadquery";
 import { workspaceToBuild123d } from "@/components/BlocklyEditor/generator/build123d";
@@ -113,6 +128,12 @@ export default function StudioPage() {
     });
   }, []);
 
+  // 文件夹式多文件工程状态
+  const [workspace, setWorkspace] = useState<ProjectWorkspace>(() =>
+    createDefaultProject("我的3D作品", "")
+  );
+  const [isExplorerOpen, setIsExplorerOpen] = useState<boolean>(true);
+
   // 视图模态：'code' (代码模式，默认) | 'block' (积木模式)
   const [viewMode, setViewMode] = useState<ViewMode>("code");
   const [projectName, setProjectName] = useState<string>("我的3D作品.py");
@@ -172,19 +193,22 @@ export default function StudioPage() {
     setTimeout(() => setSaveToastMsg(null), 3500);
   }, []);
 
-  // 页面加载时自动恢复本地暂存工程
+  // 页面加载时自动恢复本地暂存工程 (支持 2.0 多文件结构与 1.0 单文件)
   useEffect(() => {
     try {
-      const savedProject = loadProjectFromLocalStorage();
-      if (savedProject && savedProject.code) {
-        setProjectName(savedProject.projectName || "我的3D作品.py");
-        setCode(savedProject.code);
+      const savedWs = loadWorkspaceFromLocalStorage();
+      if (savedWs && savedWs.root) {
+        setWorkspace(savedWs);
+        setProjectName(savedWs.name || "我的3D作品");
+        const activeNode = findNodeByPath(savedWs.root, savedWs.activeFilePath);
+        const fileContent = activeNode?.content ?? "";
+        setCode(fileContent);
         setIsSaved(true);
-        if (savedProject.blocklyXml) {
-          pendingBlocklyXmlRef.current = savedProject.blocklyXml;
+        if (activeNode?.blocklyXml) {
+          pendingBlocklyXmlRef.current = activeNode.blocklyXml;
           if (blocklyWorkspaceRef.current) {
             try {
-              const dom = Blockly.utils.xml.textToDom(savedProject.blocklyXml);
+              const dom = Blockly.utils.xml.textToDom(activeNode.blocklyXml);
               blocklyWorkspaceRef.current.clear();
               Blockly.Xml.domToWorkspace(dom, blocklyWorkspaceRef.current);
             } catch (e) {
@@ -192,7 +216,7 @@ export default function StudioPage() {
             }
           }
         }
-        showToast(`📦 已自动恢复本地暂存工程「${savedProject.projectName || "我的3D作品"}」`);
+        showToast(`📦 已自动恢复本地工程「${savedWs.name || "我的3D作品"}」`);
       }
     } catch (e) {
       console.warn("读取本地暂存工程失败:", e);
@@ -250,16 +274,36 @@ export default function StudioPage() {
     return "part";
   }, [code]);
 
-  // 执行渲染核心逻辑 (支持单步特征时间旅行与控制台 stdout 捕获)
+  // 执行渲染核心逻辑 (支持多文件项目、虚拟模块加载、单步特征时间旅行与控制台 stdout 捕获)
   const performRender = useCallback(
-    async (targetCode: string, targetStep?: number) => {
-      if (!targetCode || !targetCode.trim()) return;
+    async (targetCode?: string, targetStep?: number, targetWs?: ProjectWorkspace) => {
+      const activeWs = targetWs || workspace;
+      const currentActiveCode = typeof targetCode === "string" ? targetCode : code;
+
+      // 提取工程中所有文件源码
+      const files = getFlatFiles(activeWs.root);
+      if (activeWs.activeFilePath) {
+        files[activeWs.activeFilePath] = currentActiveCode;
+      }
+
+      // 决定主执行入口代码 (若有指定的 entrypoint 文件则执行入口，否则执行当前文件)
+      const entryPath = activeWs.entrypoint || "main.py";
+      let entryCode = files[entryPath];
+      if (!entryCode || !entryCode.trim()) {
+        entryCode = currentActiveCode;
+      }
+
+      if (!entryCode || !entryCode.trim()) return;
 
       setLoading(true);
       setErrorMessage(null);
 
       try {
-        const res = await renderBuild123dCode(targetCode, { step: targetStep });
+        const res = await renderBuild123dCode(entryCode, {
+          step: targetStep,
+          files,
+          entrypoint: entryPath,
+        });
         if (res.stdout !== undefined) {
           setStdout(res.stdout);
         }
@@ -287,7 +331,7 @@ export default function StudioPage() {
         setLoading(false);
       }
     },
-    [formatErrorMessage]
+    [code, workspace, formatErrorMessage]
   );
 
   // 响应防抖代码更新 (默认渲染最终完整特征状态)
@@ -332,6 +376,10 @@ export default function StudioPage() {
     setIsSaved(false);
     if (!isLockedRef.current) {
       setCode(newCode);
+      setWorkspace((prev) => ({
+        ...prev,
+        root: updateFileContent(prev.root, prev.activeFilePath, newCode),
+      }));
     }
   };
 
@@ -351,12 +399,203 @@ export default function StudioPage() {
     });
   };
 
-  // 手动运行渲染
+  // 手动运行渲染 (执行当前多文件工程)
   const handleManualRun = () => {
     performRender(code);
   };
 
-  // 保存工程至本地暂存库 (LocalStorage)
+  // 切换活动编辑文件
+  const handleSelectFile = useCallback(
+    (filePath: string) => {
+      setWorkspace((prev) => {
+        // 先把当前文件的最新内容和积木同步存回当前节点
+        let updatedRoot = prev.root;
+        if (prev.activeFilePath) {
+          let xmlStr: string | undefined;
+          if (blocklyWorkspaceRef.current) {
+            try {
+              const xmlDom = Blockly.Xml.workspaceToDom(blocklyWorkspaceRef.current);
+              xmlStr = Blockly.Xml.domToText(xmlDom);
+            } catch { }
+          }
+          updatedRoot = updateFileContent(updatedRoot, prev.activeFilePath, code, xmlStr);
+        }
+
+        const targetNode = findNodeByPath(updatedRoot, filePath);
+        if (!targetNode || targetNode.type !== "file") return prev;
+
+        const openFiles = prev.openFiles.includes(filePath)
+          ? prev.openFiles
+          : [...prev.openFiles, filePath];
+
+        const targetContent = targetNode.content ?? "";
+        setCode(targetContent);
+        setIsSaved(true);
+
+        // 如果存在积木数据且当前为积木工作区，恢复积木
+        if (targetNode.blocklyXml && blocklyWorkspaceRef.current) {
+          try {
+            Blockly.Events.disable();
+            blocklyWorkspaceRef.current.clear();
+            const dom = Blockly.utils.xml.textToDom(targetNode.blocklyXml);
+            Blockly.Xml.domToWorkspace(dom, blocklyWorkspaceRef.current);
+            Blockly.Events.enable();
+          } catch { }
+        } else if (blocklyWorkspaceRef.current && targetContent) {
+          convertPythonToBlockly(targetContent, blocklyWorkspaceRef.current);
+        }
+
+        const nextWs: ProjectWorkspace = {
+          ...prev,
+          root: updatedRoot,
+          activeFilePath: filePath,
+          openFiles,
+        };
+        saveWorkspaceToLocalStorage(nextWs);
+        return nextWs;
+      });
+    },
+    [code]
+  );
+
+  // 关闭标签页
+  const handleCloseFile = useCallback((filePath: string) => {
+    setWorkspace((prev) => {
+      const nextOpen = prev.openFiles.filter((p) => p !== filePath);
+      if (nextOpen.length === 0) return prev; // 至少保留一个文件
+
+      let nextActive = prev.activeFilePath;
+      if (prev.activeFilePath === filePath) {
+        nextActive = nextOpen[nextOpen.length - 1];
+        const targetNode = findNodeByPath(prev.root, nextActive);
+        setCode(targetNode?.content || "");
+      }
+
+      const nextWs: ProjectWorkspace = {
+        ...prev,
+        openFiles: nextOpen,
+        activeFilePath: nextActive,
+      };
+      saveWorkspaceToLocalStorage(nextWs);
+      return nextWs;
+    });
+  }, []);
+
+  // 添加文件或文件夹
+  const handleAddNode = useCallback(
+    (parentPath: string, name: string, type: NodeType) => {
+      setWorkspace((prev) => {
+        const fullPath = parentPath ? `${parentPath}/${name}` : name;
+        const initialContent =
+          type === "file"
+            ? `# -*- coding: utf-8 -*-\nfrom build123d import *\n\n# 模块: ${name}\n`
+            : "";
+        const updatedRoot = addNode(prev.root, parentPath, name, type, initialContent);
+
+        let nextActive = prev.activeFilePath;
+        let nextOpen = prev.openFiles;
+
+        if (type === "file") {
+          nextActive = fullPath;
+          if (!nextOpen.includes(fullPath)) {
+            nextOpen = [...nextOpen, fullPath];
+          }
+          setCode(initialContent);
+        }
+
+        const nextWs: ProjectWorkspace = {
+          ...prev,
+          root: updatedRoot,
+          activeFilePath: nextActive,
+          openFiles: nextOpen,
+        };
+        saveWorkspaceToLocalStorage(nextWs);
+        showToast(`✨ 已创建${type === "file" ? "文件" : "文件夹"}: ${name}`);
+        return nextWs;
+      });
+    },
+    [showToast]
+  );
+
+  // 删除文件或文件夹
+  const handleDeleteNode = useCallback(
+    (path: string) => {
+      setWorkspace((prev) => {
+        if (path === prev.entrypoint) {
+          showToast("⚠️ 无法删除当前主执行入口文件，请先指定其他文件为入口");
+          return prev;
+        }
+
+        const updatedRoot = deleteNode(prev.root, path);
+        let nextOpen = prev.openFiles.filter((p) => !p.startsWith(path));
+        if (nextOpen.length === 0) {
+          nextOpen = [prev.entrypoint];
+        }
+
+        let nextActive = prev.activeFilePath;
+        if (prev.activeFilePath.startsWith(path)) {
+          nextActive = nextOpen[0];
+          const targetNode = findNodeByPath(updatedRoot, nextActive);
+          setCode(targetNode?.content || "");
+        }
+
+        const nextWs: ProjectWorkspace = {
+          ...prev,
+          root: updatedRoot,
+          openFiles: nextOpen,
+          activeFilePath: nextActive,
+        };
+        saveWorkspaceToLocalStorage(nextWs);
+        showToast(`🗑️ 已删除: ${path}`);
+        return nextWs;
+      });
+    },
+    [showToast]
+  );
+
+  // 重命名文件或文件夹
+  const handleRenameNode = useCallback(
+    (oldPath: string, newName: string) => {
+      setWorkspace((prev) => {
+        const { newRoot, newPath } = renameNode(prev.root, oldPath, newName);
+        const nextOpen = prev.openFiles.map((p) => (p === oldPath ? newPath : p));
+        const nextActive = prev.activeFilePath === oldPath ? newPath : prev.activeFilePath;
+        const nextEntry = prev.entrypoint === oldPath ? newPath : prev.entrypoint;
+
+        const nextWs: ProjectWorkspace = {
+          ...prev,
+          root: newRoot,
+          openFiles: nextOpen,
+          activeFilePath: nextActive,
+          entrypoint: nextEntry,
+        };
+        saveWorkspaceToLocalStorage(nextWs);
+        showToast(`✏️ 已重命名为: ${newName}`);
+        return nextWs;
+      });
+    },
+    [showToast]
+  );
+
+  // 设置指定文件为主执行入口
+  const handleSetEntrypoint = useCallback(
+    (path: string) => {
+      setWorkspace((prev) => {
+        const updatedRoot = setEntrypoint(prev.root, path);
+        const nextWs: ProjectWorkspace = {
+          ...prev,
+          root: updatedRoot,
+          entrypoint: path,
+        };
+        saveWorkspaceToLocalStorage(nextWs);
+        showToast(`🎯 已将「${path}」设为主执行入口 (main)`);
+        return nextWs;
+      });
+    },
+    [showToast]
+  );
+
+  // 保存整个工程至本地暂存库 (LocalStorage)
   const handleSave = () => {
     let xmlStr: string | undefined;
     if (blocklyWorkspaceRef.current) {
@@ -365,10 +604,22 @@ export default function StudioPage() {
         xmlStr = Blockly.Xml.domToText(xmlDom);
       } catch { }
     }
-    const ok = saveProjectToLocalStorage(projectName, code, xmlStr);
+
+    const updatedRoot = updateFileContent(workspace.root, workspace.activeFilePath, code, xmlStr);
+    const updatedWs: ProjectWorkspace = {
+      ...workspace,
+      name: projectName,
+      root: updatedRoot,
+      savedAt: Date.now(),
+    };
+    setWorkspace(updatedWs);
+
+    const okWs = saveWorkspaceToLocalStorage(updatedWs);
+    // 兼容保存旧版单文件格式
+    saveProjectToLocalStorage(projectName, code, xmlStr);
     setIsSaved(true);
-    if (ok) {
-      showToast("✅ 工程已成功保存到本地存储！");
+    if (okWs) {
+      showToast(`✅ 工程「${projectName}」所有文件已成功保存到本地存储！`);
     } else {
       showToast("⚠️ 保存失败，请检查浏览器存储权限");
     }
@@ -377,29 +628,33 @@ export default function StudioPage() {
   // 从本地暂存载入工程 (显式读取)
   const handleLoadSavedProject = useCallback(() => {
     try {
-      const savedProject = loadProjectFromLocalStorage();
-      if (!savedProject || !savedProject.code) {
+      const savedWs = loadWorkspaceFromLocalStorage();
+      if (!savedWs || !savedWs.root) {
         showToast("⚠️ 本地暂存库暂无工程记录，请先编辑并点击保存");
         return;
       }
-      setProjectName(savedProject.projectName || "我的3D作品.py");
-      setCode(savedProject.code);
+      setWorkspace(savedWs);
+      setProjectName(savedWs.name || "我的3D作品");
+      const activeNode = findNodeByPath(savedWs.root, savedWs.activeFilePath);
+      const activeContent = activeNode?.content || "";
+      setCode(activeContent);
       setIsSaved(true);
-      if (savedProject.blocklyXml && blocklyWorkspaceRef.current) {
+
+      if (activeNode?.blocklyXml && blocklyWorkspaceRef.current) {
         try {
           Blockly.Events.disable();
           blocklyWorkspaceRef.current.clear();
-          const dom = Blockly.utils.xml.textToDom(savedProject.blocklyXml);
+          const dom = Blockly.utils.xml.textToDom(activeNode.blocklyXml);
           Blockly.Xml.domToWorkspace(dom, blocklyWorkspaceRef.current);
           Blockly.Events.enable();
         } catch (e) {
           console.warn("恢复积木失败:", e);
         }
-      } else if (blocklyWorkspaceRef.current) {
-        convertPythonToBlockly(savedProject.code, blocklyWorkspaceRef.current);
+      } else if (blocklyWorkspaceRef.current && activeContent) {
+        convertPythonToBlockly(activeContent, blocklyWorkspaceRef.current);
       }
-      performRender(savedProject.code);
-      showToast(`📦 已成功载入本地暂存工程「${savedProject.projectName || "我的3D作品"}」`);
+      performRender(activeContent, undefined, savedWs);
+      showToast(`📦 已成功载入本地暂存工程「${savedWs.name || "我的3D作品"}」`);
     } catch (e: any) {
       showToast(`⚠️ 载入暂存工程失败: ${e.message || String(e)}`);
     }
@@ -440,6 +695,11 @@ export default function StudioPage() {
             if (generated && generated.trim()) {
               setCode(generated);
               lastBlocklyCodeRef.current = generated;
+              // 同步更新树节点
+              setWorkspace((prev) => ({
+                ...prev,
+                root: updateFileContent(prev.root, prev.activeFilePath, generated),
+              }));
             }
           } catch (e) {
             console.warn("提取积木代码失败:", e);
@@ -507,21 +767,23 @@ export default function StudioPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [code, performRender, viewMode, handleSwitchViewMode]);
 
-  // 下载当前 build123d Python 源码文件 (.py)
+  // 下载当前活动文件 Python 源码 (.py)
   const handleDownloadPy = () => {
-    downloadPythonFile(projectName, code);
-    showToast(`✅ 已下载 build123d 源码脚本: ${projectName}`);
+    const activeFileName = workspace.activeFilePath.split("/").pop() || projectName;
+    downloadPythonFile(activeFileName, code);
+    showToast(`✅ 已下载源码脚本: ${activeFileName}`);
   };
 
   // 单向导出为 CadQuery 脚本 (.py)
   const handleDownloadCadQueryPy = () => {
     const cqCode = convertBuild123dToCadQuery(code);
-    const cqName = projectName.replace(/\.(py|json)$/i, "") + "_cadquery.py";
+    const activeFileName = workspace.activeFilePath.split("/").pop() || projectName;
+    const cqName = activeFileName.replace(/\.(py|json)$/i, "") + "_cadquery.py";
     downloadPythonFile(cqName, cqCode);
     showToast(`✅ 已导出 CadQuery 单向脚本: ${cqName}`);
   };
 
-  // 导出完整工程归档包 (.cq.json)
+  // 导出完整多文件工程归档包 (.cqproj.json)
   const handleExportProject = () => {
     let xmlStr: string | undefined;
     if (blocklyWorkspaceRef.current) {
@@ -530,34 +792,47 @@ export default function StudioPage() {
         xmlStr = Blockly.Xml.domToText(xmlDom);
       } catch { }
     }
-    exportProjectArchive(projectName, code, xmlStr);
-    showToast("✅ 完整工程存档已导出 (.cq.json)");
+
+    const updatedRoot = updateFileContent(workspace.root, workspace.activeFilePath, code, xmlStr);
+    const updatedWs: ProjectWorkspace = {
+      ...workspace,
+      name: projectName,
+      root: updatedRoot,
+      savedAt: Date.now(),
+    };
+    exportWorkspaceArchiveFile(updatedWs);
+    showToast("✅ 多文件完整工程归档已导出 (.cqproj.json)");
   };
 
-  // 打开本地工程或 Python 脚本文件
+  // 打开本地工程归档 (.cqproj.json, .cq.json) 或 Python 脚本文件
   const handleImportProject = async (file: File) => {
     try {
-      const res = await readProjectFile(file);
-      setProjectName(res.projectName);
-      setCode(res.code);
+      const res = await readProjectOrWorkspaceFile(file);
+      const loadedWs = res.workspace;
+      setWorkspace(loadedWs);
+      setProjectName(loadedWs.name);
+
+      const activeNode = findNodeByPath(loadedWs.root, loadedWs.activeFilePath);
+      const fileCode = activeNode?.content ?? "";
+      setCode(fileCode);
       setIsLocked(false);
       isLockedRef.current = false;
       setIsSaved(true);
-      performRender(res.code);
 
-      if (res.blocklyXml && blocklyWorkspaceRef.current) {
+      if (activeNode?.blocklyXml && blocklyWorkspaceRef.current) {
         try {
           Blockly.Events.disable();
           blocklyWorkspaceRef.current.clear();
-          const dom = Blockly.utils.xml.textToDom(res.blocklyXml);
+          const dom = Blockly.utils.xml.textToDom(activeNode.blocklyXml);
           Blockly.Xml.domToWorkspace(dom, blocklyWorkspaceRef.current);
           Blockly.Events.enable();
         } catch { }
-      } else if (blocklyWorkspaceRef.current) {
-        convertPythonToBlockly(res.code, blocklyWorkspaceRef.current);
+      } else if (blocklyWorkspaceRef.current && fileCode) {
+        convertPythonToBlockly(fileCode, blocklyWorkspaceRef.current);
       }
 
-      showToast(`✅ 成功载入本地文件: ${res.projectName}`);
+      performRender(fileCode, undefined, loadedWs);
+      showToast(`✅ 成功载入文件/工程: ${file.name}`);
     } catch (err: any) {
       showToast(`⚠️ 载入失败: ${err.message || String(err)}`);
     }
@@ -812,19 +1087,23 @@ export default function StudioPage() {
     }
   };
 
-  // 导出 STL
+  // 导出 STL (支持多文件工程)
   const handleExportStl = async () => {
     try {
-      await downloadCadExport(code, "stl");
+      const files = getFlatFiles(workspace.root);
+      files[workspace.activeFilePath] = code;
+      await downloadCadExport(code, "stl", undefined, files, workspace.entrypoint);
     } catch (e: any) {
       alert(`导出 STL 失败: ${e.message}`);
     }
   };
 
-  // 导出 STEP
+  // 导出 STEP (支持多文件工程)
   const handleExportStep = async () => {
     try {
-      await downloadCadExport(code, "step");
+      const files = getFlatFiles(workspace.root);
+      files[workspace.activeFilePath] = code;
+      await downloadCadExport(code, "step", undefined, files, workspace.entrypoint);
     } catch (e: any) {
       alert(`导出 STEP 失败: ${e.message}`);
     }
@@ -834,6 +1113,10 @@ export default function StudioPage() {
   const handleSelectTemplate = (template: CadTemplate) => {
     setIsLocked(false);
     setCode(template.code);
+    setWorkspace((prev) => ({
+      ...prev,
+      root: updateFileContent(prev.root, prev.activeFilePath, template.code),
+    }));
     performRender(template.code);
   };
 
@@ -841,6 +1124,10 @@ export default function StudioPage() {
   const handleLoadMissionCode = (missionCode: string) => {
     setIsLocked(false);
     setCode(missionCode);
+    setWorkspace((prev) => ({
+      ...prev,
+      root: updateFileContent(prev.root, prev.activeFilePath, missionCode),
+    }));
     performRender(missionCode);
   };
 
@@ -892,42 +1179,69 @@ export default function StudioPage() {
       {/* 主工作区 (二态自适应：代码优先 / 积木模式，常驻挂载以保障零延迟与无损切换) */}
       <main className="flex-1 w-full h-[calc(100vh-3.25rem-3.5rem)] relative">
         <PanelGroup direction="horizontal" className="w-full h-full">
-          {/* 左侧编辑器与积木容器 (60%) */}
-          <Panel defaultSize={60} minSize={30} className="relative h-full overflow-hidden">
-            {/* 1. 代码模式视图 (Monaco) */}
-            <div
-              className={`w-full h-full ${viewMode === "code" ? "block" : "hidden"}`}
-              style={{ display: viewMode === "code" ? "block" : "none" }}
-            >
-              <PythonEditor
-                code={code}
-                onChange={handleMonacoCodeChange}
-                isLocked={isLocked}
-                onToggleLock={handleToggleLock}
-                errorMessage={errorMessage}
-                stdout={stdout}
-                execTime={execTime}
-                isSearchOpen={isSearchOpen}
-                onCloseSearch={() => setIsSearchOpen(false)}
-                isConsoleOpen={isConsoleOpen}
-                onToggleConsole={() => setIsConsoleOpen((prev) => !prev)}
-                indentGuides={settings.indentGuides}
-                colorMode={settings.colorMode}
-                onCodeToBlockly={handleCodeToBlockly}
-              />
-            </div>
+          {/* 左侧编辑器与积木容器 (含文件夹式资源管理器 + 顶部标签栏) (60%) */}
+          <Panel defaultSize={60} minSize={30} className="relative h-full overflow-hidden flex flex-row">
+            {/* 1. 文件夹式多文件工程资源管理器侧边栏 */}
+            <ProjectExplorer
+              workspace={workspace}
+              onSelectFile={handleSelectFile}
+              onAddNode={handleAddNode}
+              onDeleteNode={handleDeleteNode}
+              onRenameNode={handleRenameNode}
+              onSetEntrypoint={handleSetEntrypoint}
+              onExportProject={handleExportProject}
+              onImportProject={handleImportProject}
+              isOpen={isExplorerOpen}
+              onToggleOpen={() => setIsExplorerOpen((prev) => !prev)}
+            />
 
-            {/* 2. 积木模式视图 (Blockly) */}
-            <div
-              className={`w-full h-full ${viewMode === "block" ? "block" : "hidden"}`}
-              style={{ display: viewMode === "block" ? "block" : "none" }}
-            >
-              <BlocklyWorkspace
-                onCodeChange={handleBlocklyCodeChange}
-                workspaceRefOut={blocklyWorkspaceRef}
-                onWorkspaceReady={handleWorkspaceReady}
-                colorMode={settings.colorMode}
+            {/* 2. 编辑器与积木工作区主区域 */}
+            <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden">
+              {/* 顶部标签栏 */}
+              <EditorTabs
+                workspace={workspace}
+                onSelectFile={handleSelectFile}
+                onCloseFile={handleCloseFile}
               />
+
+              {/* 核心工作区 (Monaco 或 Blockly) */}
+              <div className="flex-1 relative min-h-0 overflow-hidden">
+                {/* 1. 代码模式视图 (Monaco) */}
+                <div
+                  className={`w-full h-full ${viewMode === "code" ? "block" : "hidden"}`}
+                  style={{ display: viewMode === "code" ? "block" : "none" }}
+                >
+                  <PythonEditor
+                    code={code}
+                    onChange={handleMonacoCodeChange}
+                    isLocked={isLocked}
+                    onToggleLock={handleToggleLock}
+                    errorMessage={errorMessage}
+                    stdout={stdout}
+                    execTime={execTime}
+                    isSearchOpen={isSearchOpen}
+                    onCloseSearch={() => setIsSearchOpen(false)}
+                    isConsoleOpen={isConsoleOpen}
+                    onToggleConsole={() => setIsConsoleOpen((prev) => !prev)}
+                    indentGuides={settings.indentGuides}
+                    colorMode={settings.colorMode}
+                    onCodeToBlockly={handleCodeToBlockly}
+                  />
+                </div>
+
+                {/* 2. 积木模式视图 (Blockly) */}
+                <div
+                  className={`w-full h-full ${viewMode === "block" ? "block" : "hidden"}`}
+                  style={{ display: viewMode === "block" ? "block" : "none" }}
+                >
+                  <BlocklyWorkspace
+                    onCodeChange={handleBlocklyCodeChange}
+                    workspaceRefOut={blocklyWorkspaceRef}
+                    onWorkspaceReady={handleWorkspaceReady}
+                    colorMode={settings.colorMode}
+                  />
+                </div>
+              </div>
             </div>
           </Panel>
 
@@ -1182,6 +1496,8 @@ export default function StudioPage() {
         isOpen={isPrintCheckerOpen}
         onClose={() => setIsPrintCheckerOpen(false)}
         code={code}
+        files={getFlatFiles(workspace.root)}
+        entrypoint={workspace.entrypoint}
         onExportStl={handleExportStl}
         settings={settings}
       />

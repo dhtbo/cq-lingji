@@ -54,11 +54,16 @@ class RenderRequest(BaseModel):
     angular_tolerance: float = Field(0.1, ge=0.01, le=1.0, description="B-Rep 网格细分角度公差")
     color: Optional[str] = Field("#3b82f6", description="零件默认基础渲染着色")
     alpha: float = Field(1.0, ge=0.0, le=1.0, description="零件材质不透明度")
+    # 文件夹式多文件工程支持
+    files: Optional[Dict[str, str]] = Field(None, description="文件夹工程全量文件字典（相对路径 -> 代码文本）")
+    entrypoint: Optional[str] = Field(None, description="主入口文件路径（如 main.py）")
 
 
 class ExportRequest(BaseModel):
     code: str = Field(..., description="build123d / CadQuery Python 代码文本")
     filename: Optional[str] = Field(None, description="导出自定义文件名")
+    files: Optional[Dict[str, str]] = Field(None, description="文件夹工程全量文件字典")
+    entrypoint: Optional[str] = Field(None, description="主入口文件路径")
 
 
 @app.get("/api/v1/health")
@@ -79,10 +84,10 @@ async def health_check() -> Dict[str, Any]:
 @app.post("/api/v1/render/cq")
 async def render_cad(req: RenderRequest):
     """
-    执行 CadQuery 代码并转换为 three-cad-viewer 规范的 JSON 网格数据，支持分步特征时间旅行
+    执行 CadQuery 代码并转换为 three-cad-viewer 规范的 JSON 网格数据，支持分步特征时间旅行与多文件工程
     """
     code_text = req.code.strip()
-    if not code_text:
+    if not code_text and not req.files:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="输入代码不能为空"
@@ -93,7 +98,7 @@ async def render_cad(req: RenderRequest):
     try:
         # 1. 沙箱受限执行并获取 CadQuery 目标实体与步骤清单
         part, steps, current_step, captured_stdout = execute_cq_sandboxed(
-            code_text, step=req.step, timeout=4.0
+            code_text, step=req.step, timeout=4.0, files=req.files, entrypoint=req.entrypoint
         )
     except (ValueError, TimeoutError, RuntimeError) as e:
         duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
@@ -266,6 +271,8 @@ class PrintabilityRequest(BaseModel):
     bed_x: Optional[float] = Field(220.0, description="热床最大成型尺寸 X (mm)")
     bed_y: Optional[float] = Field(220.0, description="热床最大成型尺寸 Y (mm)")
     bed_z: Optional[float] = Field(250.0, description="热床最大成型尺寸 Z (mm)")
+    files: Optional[Dict[str, str]] = Field(None, description="多文件工程目录文件字典")
+    entrypoint: Optional[str] = Field(None, description="执行主入口脚本文件名")
 
 
 @app.post("/api/v1/analyze/printability")
@@ -274,11 +281,16 @@ async def analyze_printability(req: PrintabilityRequest):
     3D 打印前置体检与流形/成型尺寸检测接口
     """
     code_text = req.code.strip()
-    if not code_text:
+    if not code_text and not req.files:
         raise HTTPException(status_code=400, detail="代码不能为空")
 
     try:
-        part, *_ = execute_cq_sandboxed(code_text, timeout=5.0)
+        part, *_ = execute_cq_sandboxed(
+            code_text,
+            timeout=5.0,
+            files=req.files,
+            entrypoint=req.entrypoint,
+        )
     except Exception as e:
         return {
             "status": "error",

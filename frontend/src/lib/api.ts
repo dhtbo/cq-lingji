@@ -21,17 +21,21 @@ export interface RenderResult {
   detail?: string;
 }
 
+export interface RenderOptions {
+  step?: number;
+  tolerance?: number;
+  angular_tolerance?: number;
+  color?: string;
+  files?: Record<string, string>;
+  entrypoint?: string;
+}
+
 /**
- * 请求后端渲染 build123d / CadQuery 脚本并获取网格数据，支持单步时间旅行
+ * 请求后端渲染 build123d / CadQuery 脚本并获取网格数据，支持单步时间旅行与多文件工程
  */
 export async function renderBuild123dCode(
   code: string,
-  options: {
-    step?: number;
-    tolerance?: number;
-    angular_tolerance?: number;
-    color?: string;
-  } = {}
+  options: RenderOptions = {}
 ): Promise<RenderResult> {
   const response = await fetch(`${API_BASE}/api/v1/render/b3d`, {
     method: "POST",
@@ -44,6 +48,8 @@ export async function renderBuild123dCode(
       tolerance: options.tolerance ?? 0.01,
       angular_tolerance: options.angular_tolerance ?? 0.1,
       color: options.color ?? "#3b82f6",
+      files: options.files,
+      entrypoint: options.entrypoint,
     }),
   });
 
@@ -58,12 +64,14 @@ export async function renderBuild123dCode(
 export const renderCadQueryCode = renderBuild123dCode;
 
 /**
- * 触发 STL 或 STEP 文件下载
+ * 触发 STL 或 STEP 文件下载，支持多文件工程
  */
 export async function downloadCadExport(
   code: string,
   format: "stl" | "step",
-  filename?: string
+  filename?: string,
+  files?: Record<string, string>,
+  entrypoint?: string
 ): Promise<void> {
   const endpoint = `${API_BASE}/api/v1/export/${format}`;
   const defaultName = `cad_model_${Date.now()}.${format}`;
@@ -77,6 +85,8 @@ export async function downloadCadExport(
     body: JSON.stringify({
       code,
       filename: outName,
+      files,
+      entrypoint,
     }),
   });
 
@@ -122,6 +132,7 @@ export interface PrintabilityReport {
   status: "success" | "warning" | "error";
   message?: string;
   score?: number;
+  health_score?: number;
   grade?: string;
   dimensions?: {
     x: number;
@@ -137,6 +148,11 @@ export interface PrintabilityReport {
   solids_count?: number;
   estimated_filament_g?: number;
   estimated_hours?: number;
+  metrics?: {
+    volume_cm3?: number;
+    filament_weight_g?: number;
+    estimated_hours?: number;
+  };
   checks?: PrintCheckItem[];
   suggestions?: string[];
 }
@@ -146,7 +162,9 @@ export interface PrintabilityReport {
  */
 export async function analyzeCadPrintability(
   code: string,
-  bedSize: { x: number; y: number; z: number } = { x: 220, y: 220, z: 250 }
+  bedSize: { x: number; y: number; z: number } = { x: 220, y: 220, z: 250 },
+  files?: Record<string, string>,
+  entrypoint?: string
 ): Promise<PrintabilityReport> {
   const response = await fetch(`${API_BASE}/api/v1/analyze/printability`, {
     method: "POST",
@@ -158,6 +176,8 @@ export async function analyzeCadPrintability(
       bed_x: bedSize.x,
       bed_y: bedSize.y,
       bed_z: bedSize.z,
+      files,
+      entrypoint,
     }),
   });
 

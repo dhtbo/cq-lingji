@@ -41,6 +41,7 @@ ALLOWED_MODULES = {
     "functools",
     "collections",
     "dataclasses",
+    "ocp_vscode",
 }
 
 def _safe_import(name: str, *args: Any, **kwargs: Any) -> Any:
@@ -217,24 +218,27 @@ class SecurityValidator(ast.NodeVisitor):
     """
     通过 AST 遍历对输入代码进行深度静态安全审查
     """
-    def __init__(self) -> None:
+    def __init__(self, project_modules: Optional[set[str]] = None) -> None:
         self.errors: list[str] = []
+        self.project_modules: set[str] = project_modules or set()
+
+    def _is_allowed(self, mod_name: str) -> bool:
+        base = mod_name.split(".")[0]
+        return (base in ALLOWED_MODULES) or (base in self.project_modules) or (mod_name in self.project_modules)
 
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
-            base_module = alias.name.split(".")[0]
-            if base_module not in ALLOWED_MODULES:
+            if not self._is_allowed(alias.name):
                 self.errors.append(
-                    f"行 {node.lineno}: 禁止导入模块 '{alias.name}'。仅允许使用: {', '.join(ALLOWED_MODULES)}"
+                    f"行 {node.lineno}: 禁止导入模块 '{alias.name}'。仅允许使用: {', '.join(sorted(ALLOWED_MODULES))}"
                 )
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         if node.module:
-            base_module = node.module.split(".")[0]
-            if base_module not in ALLOWED_MODULES:
+            if not self._is_allowed(node.module):
                 self.errors.append(
-                    f"行 {node.lineno}: 禁止从模块 '{node.module}' 导入。仅允许使用: {', '.join(ALLOWED_MODULES)}"
+                    f"行 {node.lineno}: 禁止从模块 '{node.module}' 导入。仅允许使用: {', '.join(sorted(ALLOWED_MODULES))}"
                 )
         self.generic_visit(node)
 
@@ -275,7 +279,7 @@ def translate_cad_error(raw_error: str) -> str:
     return f"代码执行异常: {raw_error}"
 
 
-def validate_code_ast(code: str) -> None:
+def validate_code_ast(code: str, project_modules: Optional[set[str]] = None) -> None:
     """
     静态解析并校验代码安全性，如果不安全抛出 ValueError
     """
@@ -284,7 +288,7 @@ def validate_code_ast(code: str) -> None:
     except SyntaxError as e:
         raise ValueError(f"语法错误 (第 {e.lineno} 行): {e.msg}") from e
 
-    validator = SecurityValidator()
+    validator = SecurityValidator(project_modules=project_modules)
     validator.visit(tree)
     if validator.errors:
         raise ValueError("安全校验未通过:\n" + "\n".join(validator.errors))
@@ -318,11 +322,51 @@ def get_code_steps(code: str) -> List[Dict[str, Any]]:
     return steps
 
 
-def _run_script_worker(code: str) -> Tuple[Dict[str, Any], str, Dict[str, Any]]:
+def _create_ocp_vscode_adapter(show_func: Any, show_object_func: Any, reset_func: Any) -> Any:
+    """
+    创建高性能轻量级 ocp_vscode 兼容模块，直接无缝对接 Studio 3D 视口渲染
+    全面兼容: show, show_object, show_clear, reset_show, Camera, Color, Collapse, set_port, set_viewer_config
+    """
+    import types
+    mod = types.ModuleType("ocp_vscode")
+    mod.show = show_func
+    mod.show_object = show_object_func
+    mod.show_clear = reset_func
+    mod.reset_show = reset_func
+    mod.set_port = lambda *a, **k: None
+    mod.set_viewer_config = lambda *a, **k: None
+
+    if b3d is not None:
+        mod.Color = getattr(b3d, "Color", None)
+    else:
+        mod.Color = getattr(cq, "Color", None) if cq is not None else None
+
+    class _CameraEnum:
+        RESET = 0
+        CENTER = 1
+        KEEP = 2
+
+    class _CollapseEnum:
+        NONE = 0
+        LEAVES = 1
+        ALL = 2
+        ROOT = 3
+
+    mod.Camera = _CameraEnum
+    mod.Collapse = _CollapseEnum
+    mod.__file__ = "ocp_vscode_adapter.py"
+    return mod
+
+
+def _run_script_worker(
+    code: str,
+    files: Optional[Dict[str, str]] = None,
+) -> Tuple[Dict[str, Any], str, Dict[str, Any]]:
     """
     在受限环境中执行代码并返回 (局部变量字典, 捕获的控制台 stdout 输出, 注册的 CQ 实体字典)
-    全面兼容 CQ-Editor 内置的 show_object, show, debug, log, rand_color, reset_show 等函数
+    全面兼容 CQ-Editor 及 ocp_vscode 的 show_object, show, debug, log 等函数，支持多文件工程虚拟导入
     """
+    import types
     stdout_buf = io.StringIO()
     cq_objects: Dict[str, Any] = {}
 
@@ -333,7 +377,7 @@ def _run_script_worker(code: str) -> Tuple[Dict[str, Any], str, Dict[str, Any]]:
         **kwargs: Any,
     ) -> None:
         """
-        兼容 CQ-Editor 的 show_object 函数，登记待视口渲染的 CadQuery 实体
+        兼容 CQ-Editor 及 ocp_vscode 的 show_object 函数，登记待视口渲染的实体
         """
         opts = dict(options or {})
         opts.update(kwargs)
@@ -344,16 +388,45 @@ def _run_script_worker(code: str) -> Tuple[Dict[str, Any], str, Dict[str, Any]]:
             "options": opts,
         }
 
-    def _show(
-        obj: Any,
-        name: Optional[str] = None,
-        options: Optional[Dict[str, Any]] = None,
-        **kwargs: Any,
-    ) -> None:
+    def _studio_show(*cad_objs: Any, **kwargs: Any) -> None:
         """
-        兼容 CQ-Editor 的 show 简写函数
+        全能兼容 CQ-Editor 及 ocp_vscode 的 show 函数
+        支持:
+          - show(obj)
+          - show(obj, names=["part"])
+          - show(obj, name="part")
+          - show(obj1, obj2, names=["p1", "p2"], colors=[...], alphas=[...])
         """
-        _show_object(obj, name=name, options=options, **kwargs)
+        if not cad_objs:
+            return
+
+        names = kwargs.get("names")
+        single_name = kwargs.get("name")
+        colors = kwargs.get("colors")
+        single_color = kwargs.get("color")
+        alphas = kwargs.get("alphas")
+        single_alpha = kwargs.get("alpha")
+
+        for idx, obj in enumerate(cad_objs):
+            if names and isinstance(names, (list, tuple)) and idx < len(names):
+                obj_name = str(names[idx])
+            elif single_name and idx == 0:
+                obj_name = str(single_name)
+            else:
+                obj_name = f"part_{len(cq_objects) + 1}"
+
+            opts: Dict[str, Any] = {}
+            if colors and isinstance(colors, (list, tuple)) and idx < len(colors):
+                opts["color"] = colors[idx]
+            elif single_color:
+                opts["color"] = single_color
+
+            if alphas and isinstance(alphas, (list, tuple)) and idx < len(alphas):
+                opts["alpha"] = alphas[idx]
+            elif single_alpha is not None:
+                opts["alpha"] = single_alpha
+
+            _show_object(obj, name=obj_name, options=opts)
 
     def _debug(
         obj: Any,
@@ -361,24 +434,15 @@ def _run_script_worker(code: str) -> Tuple[Dict[str, Any], str, Dict[str, Any]]:
         options: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> None:
-        """
-        兼容 CQ-Editor 的 debug 调试显示函数 (默认半透明红光)
-        """
         opts = dict(options or {})
         opts.setdefault("color", "red")
         opts.setdefault("alpha", 0.3)
         _show_object(obj, name=name or f"debug_{len(cq_objects) + 1}", options=opts, **kwargs)
 
     def _log(msg: Any) -> None:
-        """
-        兼容 CQ-Editor 的 log 调试输出函数
-        """
         print(f"[LOG] {msg}")
 
     def _rand_color(alpha: float = 0.0, cfloat: bool = False) -> Any:
-        """
-        兼容 CQ-Editor 的 rand_color 颜色辅助函数
-        """
         r = random.randint(30, 220)
         g = random.randint(30, 220)
         b = random.randint(30, 220)
@@ -387,21 +451,92 @@ def _run_script_worker(code: str) -> Tuple[Dict[str, Any], str, Dict[str, Any]]:
         return {"alpha": alpha, "color": (r, g, b)}
 
     def _reset_show() -> None:
-        """
-        清空已注册的视口对象
-        """
         cq_objects.clear()
 
     custom_cq_funcs = {
         "show_object": _show_object,
-        "show": _show,
+        "show": _studio_show,
         "debug": _debug,
         "log": _log,
         "rand_color": _rand_color,
         "reset_show": _reset_show,
     }
 
+    # 创建 ocp_vscode 兼容模块对象
+    ocp_adapter = _create_ocp_vscode_adapter(_studio_show, _show_object, _reset_show)
+
+    # 构建多文件虚拟工程模块映射
+    virtual_modules_map: Dict[str, str] = {}
+    virtual_packages: set[str] = set()
+    if files:
+        for f_path, f_code in files.items():
+            norm_path = f_path.replace("\\", "/").lstrip("/")
+            if norm_path.endswith(".py"):
+                mod_key = norm_path[:-3].replace("/", ".")
+                virtual_modules_map[mod_key] = f_code
+                parts = mod_key.split(".")
+                for i in range(1, len(parts)):
+                    virtual_packages.add(".".join(parts[:i]))
+
+    loaded_virtual_modules: Dict[str, Any] = {}
+
+    def _load_virtual_module(mod_name: str) -> Any:
+        if mod_name in loaded_virtual_modules:
+            return loaded_virtual_modules[mod_name]
+
+        if mod_name in virtual_packages:
+            pkg = types.ModuleType(mod_name)
+            pkg.__path__ = [mod_name]
+            pkg.__name__ = mod_name
+            loaded_virtual_modules[mod_name] = pkg
+            return pkg
+
+        if mod_name in virtual_modules_map:
+            sub_code = virtual_modules_map[mod_name]
+            all_proj_mods = set(virtual_modules_map.keys()) | virtual_packages
+            validate_code_ast(sub_code, project_modules=all_proj_mods)
+
+            sub_mod = types.ModuleType(mod_name)
+            sub_mod.__file__ = mod_name.replace(".", "/") + ".py"
+            sub_mod.__name__ = mod_name
+            loaded_virtual_modules[mod_name] = sub_mod
+
+            if "." in mod_name:
+                parent_name, child_name = mod_name.rsplit(".", 1)
+                parent_mod = _load_virtual_module(parent_name)
+                setattr(parent_mod, child_name, sub_mod)
+
+            sub_mod.__dict__.update(global_env)
+            sub_mod.__dict__["__name__"] = mod_name
+            sub_mod.__dict__["__file__"] = sub_mod.__file__
+            sub_mod.__dict__["__builtins__"] = builtins_env
+
+            exec(sub_code, sub_mod.__dict__)
+            return sub_mod
+
+        return None
+
+    def _safe_import_runtime(name: str, globals: Any = None, locals: Any = None, fromlist: Any = (), level: int = 0) -> Any:
+        base_name = name.split(".")[0]
+        # 1. 优先捕获 ocp_vscode
+        if base_name == "ocp_vscode":
+            return ocp_adapter
+
+        # 2. 如果是工程虚拟文件模块
+        if name in virtual_modules_map or name in virtual_packages or base_name in virtual_modules_map or base_name in virtual_packages:
+            target_mod = _load_virtual_module(name)
+            if fromlist:
+                return target_mod
+            return _load_virtual_module(base_name)
+
+        # 3. 校验白名单标准/第三方库
+        if base_name in ALLOWED_MODULES:
+            return __import__(name, globals, locals, fromlist, level)
+
+        raise ImportError(f"安全沙箱禁止导入模块: '{name}'。仅允许: {', '.join(sorted(ALLOWED_MODULES))}")
+
     builtins_env = dict(SAFE_BUILTINS)
+    builtins_env["__import__"] = _safe_import_runtime
     builtins_env.update(custom_cq_funcs)
 
     # 导出 build123d 常用类与函数，使其如同 from build123d import * 一样开箱即用
@@ -422,6 +557,8 @@ def _run_script_worker(code: str) -> Tuple[Dict[str, Any], str, Dict[str, Any]]:
         "math": math,
         "random": random,
         "Turtle3D": Turtle3D,
+        "insert": getattr(b3d, "insert", getattr(b3d, "add", None)),
+        "ocp_vscode": ocp_adapter,
         **b3d_symbols,
         **custom_cq_funcs,
     }
@@ -431,7 +568,6 @@ def _run_script_worker(code: str) -> Tuple[Dict[str, Any], str, Dict[str, Any]]:
         with contextlib.redirect_stdout(stdout_buf):
             exec(code, global_env, local_env)
     except Exception as e:
-        # 将已捕获的控制台输出附加到异常对象上
         setattr(e, "captured_stdout", stdout_buf.getvalue())
         raise e
 
@@ -479,38 +615,59 @@ def _compose_multi_layer_cad_object(obj: Any) -> Any:
 def execute_cq_sandboxed(
     code: str,
     step: Optional[int] = None,
-    timeout: float = 4.0
+    timeout: float = 4.0,
+    files: Optional[Dict[str, str]] = None,
+    entrypoint: Optional[str] = None,
 ) -> Tuple[Any, List[Dict[str, Any]], int, str]:
     """
-    安全沙箱执行 CadQuery 代码，支持单步时间旅行、教学错误诊断与控制台 stdout 捕获
-    兼容原生 CadQuery 脚本、CQ-Editor 脚本 (show_object/debug) 及 Blockly 自动生成代码
+    安全沙箱执行 CadQuery / build123d 代码，支持多文件工程结构、单步时间旅行、教学错误诊断与控制台 stdout 捕获
+    兼容原生 CadQuery 脚本、build123d 脚本、ocp_vscode/CQ-Editor 脚本 (show/show_object) 及 Blockly 自动生成代码
     
     :param code: 用户输入的 Python/CadQuery 代码
     :param step: 指定回放到第几个建模语句（1-indexed，None 为完整运行）
     :param timeout: 超时时间（秒）
+    :param files: 多文件工程字典（相对文件路径 -> 代码内容）
+    :param entrypoint: 多文件工程的主入口文件（默认 main.py）
     :return: (part实体, 步骤列表, 当前执行步骤号, 捕获的控制台输出)
     """
+    # 提取多文件工程模块集合
+    project_modules: set[str] = set()
+    exec_code = code
+    if files:
+        if entrypoint and entrypoint in files:
+            exec_code = files[entrypoint]
+        elif "main.py" in files and not code.strip():
+            exec_code = files["main.py"]
+
+        for f_path in files.keys():
+            norm = f_path.replace("\\", "/").lstrip("/")
+            if norm.endswith(".py"):
+                mod_name = norm[:-3].replace("/", ".")
+                project_modules.add(mod_name)
+                parts = mod_name.split(".")
+                for i in range(1, len(parts)):
+                    project_modules.add(".".join(parts[:i]))
+
     # 1. 静态 AST 审查
-    validate_code_ast(code)
+    validate_code_ast(exec_code, project_modules=project_modules)
 
     # 2. 解析分步节点
-    steps = get_code_steps(code)
+    steps = get_code_steps(exec_code)
     actual_step = len(steps)
 
-    exec_code = code
     if step is not None and 1 <= step <= len(steps):
         target_end_line = steps[step - 1]["end_line"]
-        lines = code.splitlines()
+        lines = exec_code.splitlines()
         exec_code = "\n".join(lines[:target_end_line])
         actual_step = step
         # 确保包含 import
-        if "import cadquery as cq" not in exec_code:
-            exec_code = "import cadquery as cq\n" + exec_code
+        if "import cadquery as cq" not in exec_code and "from build123d import *" not in exec_code:
+            exec_code = "from build123d import *\n" + exec_code
 
     captured_stdout = ""
     # 3. 超时执行保护
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(_run_script_worker, exec_code)
+        future = executor.submit(_run_script_worker, exec_code, files)
         try:
             local_vars, captured_stdout, cq_objects = future.result(timeout=timeout)
         except concurrent.futures.TimeoutError as e:
