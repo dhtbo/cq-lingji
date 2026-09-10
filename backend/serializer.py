@@ -53,27 +53,50 @@ def serialize_cad_object(
     :param alpha: 透明度 (0.0 ~ 1.0)
     :return: 包含场景层次与网格缓冲区的 JSON 字典
     """
-    # 校验并提取底层 OCP 几何体（兼容 build123d 与 CadQuery）
+    # 校验并提取目标几何对象（优先直接传入对象本身以保留其 color/材质元数据）
     target_obj = None
     if cq is not None and isinstance(obj, cq.Workplane):
         if not obj.val():
             raise ValueError("Workplane 当前未包含有效实体")
         target_obj = obj
     elif hasattr(obj, "wrapped"):
-        # build123d 的 Part, Solid, Compound, Sketch, Wire, Face 等均包含 .wrapped
-        target_obj = obj.wrapped
+        # build123d 的 Part, Solid, Compound, Sketch, Wire, Face 等：
+        # to_ocpgroup 原生直接支持 build123d 对象本身，直接传递可保留其 .color 属性！
+        target_obj = obj
     elif cq is not None and isinstance(obj, (cq.Shape, cq.Assembly)):
         target_obj = obj
     elif hasattr(obj, "val"):
-        target_obj = obj.val().wrapped if hasattr(obj.val(), "wrapped") else obj.val()
+        target_obj = obj.val()
     else:
         target_obj = obj
+
+    # 智能探测对象是否自身或其子构件已显式定义了颜色
+    def _has_explicit_color(shape_candidate: Any) -> bool:
+        if shape_candidate is None:
+            return False
+        # 自身是否有 color 属性
+        c = getattr(shape_candidate, "color", None)
+        if c is not None:
+            return True
+        # 检查是否为 build123d Compound 或拥有 children
+        children = getattr(shape_candidate, "children", None)
+        if children and isinstance(children, (list, tuple)):
+            for child in children:
+                if _has_explicit_color(child):
+                    return True
+        # 检查是否为 CadQuery Assembly
+        if cq is not None and isinstance(shape_candidate, cq.Assembly):
+            return True
+        return False
+
+    has_custom_color = _has_explicit_color(target_obj)
+    colors_param = None if has_custom_color else ([color] if color else None)
 
     # 1. 转换为 OCP 组结构
     part_group, instances = to_ocpgroup(
         target_obj,
         names=[name],
-        colors=[color] if color else None,
+        colors=colors_param,
         alphas=[alpha],
     )
 

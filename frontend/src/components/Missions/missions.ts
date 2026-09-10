@@ -58,7 +58,7 @@ with BuildPart() as part:
     revolve(axis=Axis.Z, revolution_arc=360)
 
     # Task 2: 挑战：在顶部添加加固阶梯法兰 (外径23，内径19，高3)
-    # 提示: with Locations((0, 0, 15)):
+    # 提示: with Locations((0, 0, 16.5)):
     #           Cylinder(radius=23, height=3)
     #           Hole(radius=19, depth=3)
 `,
@@ -73,7 +73,7 @@ with BuildPart() as part:
     revolve(axis=Axis.Z, revolution_arc=360)
 
     # 2. 顶部法兰圈加固外环与中心孔
-    with Locations((0, 0, 15)):
+    with Locations((0, 0, 16.5)):
         Cylinder(radius=23, height=3)
         Hole(radius=19, depth=3)
 `,
@@ -111,9 +111,9 @@ with BuildPart() as part:
 
     # 3. 挑战：在 YZ 侧面切削一个半径 6mm 的舷窗
     # with BuildSketch(Plane.YZ) as sk:
-    #     with Locations((0, 25)):
+    #     with Locations((0, 5)):
     #         Circle(radius=6)
-    # extrude(amount=50, mode=Mode.SUBTRACT)
+    # extrude(amount=50, both=True, mode=Mode.SUBTRACT)
 `,
     solutionCode: `from build123d import *
 
@@ -127,9 +127,9 @@ with BuildPart() as part:
 
     # 3. 侧向观景舷窗切削
     with BuildSketch(Plane.YZ) as sk:
-        with Locations((0, 25)):
+        with Locations((0, 5)):
             Circle(radius=6)
-    extrude(amount=50, mode=Mode.SUBTRACT)
+    extrude(amount=50, both=True, mode=Mode.SUBTRACT)
 `,
     hint: "掏空时内腔圆柱的底部通过 Locations((0, 0, 3)) 抬高 3mm，可保留结实防冲撞的大底厚度；侧向在 Plane.YZ 投影拉伸即可切穿舷窗。",
     karpathyNote: "减法和加法同等重要。在 3D CAD 里，掏出内部空间和留下防护壁厚是安全工程的第一信条。",
@@ -162,7 +162,7 @@ with BuildPart() as part:
     # 2. 挑战：使用 for 循环生成 5 层环形散热肋片 (半径23，厚度2) 与主舱熔合
     # 提示:
     # for i in range(5):
-    #     z = 8 + i * 6
+    #     z = -12 + i * 6
     #     with Locations((0, 0, z)):
     #         Cylinder(radius=23, height=2)
 `,
@@ -174,7 +174,7 @@ with BuildPart() as part:
 
     # 2. 循环生成 5 层环形散热肋片
     for i in range(5):
-        z = 8 + i * 6
+        z = -12 + i * 6
         with Locations((0, 0, z)):
             Cylinder(radius=23, height=2)
 `,
@@ -208,11 +208,11 @@ with BuildPart() as part:
 
     # 2. 挑战：使用 PolarLocations 在半径 16mm 的圆周上生成 8 个姿控反推喷嘴
     # 提示:
-    # with Locations((0, 0, -6)):
+    # with Locations((0, 0, -5)):
     #     with PolarLocations(radius=16, count=8):
     #         with BuildSketch(Plane.XY) as s1:
     #             Circle(radius=3.5)
-    #         with BuildSketch(Plane.XY.offset(6)) as s2:
+    #         with BuildSketch(Plane.XY.offset(-6)) as s2:
     #             Circle(radius=1.8)
     #         loft()
 `,
@@ -223,12 +223,11 @@ with BuildPart() as part:
     Cylinder(radius=22, height=10)
 
     # 2. 8 喷嘴环形极坐标阵列
-    with Locations((0, 0, -6)):
+    with Locations((0, 0, -5)):
         with PolarLocations(radius=16, count=8):
-            # 放样生成拉伐尔扩张单喷嘴
             with BuildSketch(Plane.XY) as s1:
                 Circle(radius=3.5)
-            with BuildSketch(Plane.XY.offset(6)) as s2:
+            with BuildSketch(Plane.XY.offset(-6)) as s2:
                 Circle(radius=1.8)
             loft()
 `,
@@ -268,9 +267,9 @@ with BuildPart() as part:
     #     Box(46, 12, 2)
     # with Locations((0, -24, 6)):
     #     Box(46, 12, 2)
-    # with Locations((18, 0, 9)):
+    # with Locations((18, 0, 19)):
     #     Cylinder(radius=2.5, height=20)
-    # with Locations((18, 0, 29)):
+    # with Locations((18, 0, 32)):
     #     Box(8, 16, 6)
 `,
     solutionCode: `from build123d import *
@@ -287,9 +286,9 @@ with BuildPart() as part:
         Box(46, 12, 2)
 
     # 3. 前方双目相机桅杆与探头
-    with Locations((18, 0, 9)):
+    with Locations((18, 0, 19)):
         Cylinder(radius=2.5, height=20)
-    with Locations((18, 0, 29)):
+    with Locations((18, 0, 32)):
         Box(8, 16, 6)
 `,
     hint: "使用 part.edges().filter_by(Axis.Z) 可以精准捕获平行于 Z 轴的 4 条立棱，fillet(3.0) 会把直角变成平滑抗撞的弧面。",
@@ -318,29 +317,23 @@ with BuildPart() as part:
 
 with BuildPart() as part:
     # 1. 建立轮毂基体与中心轴孔 (外径18，轴孔4，宽度14)
-    with BuildSketch(Plane.YZ) as sk:
-        Circle(radius=18)
-        Circle(radius=4, mode=Mode.SUBTRACT)
-    extrude(amount=14)
+    Cylinder(radius=18, height=14)
+    Hole(radius=4, depth=14)
 
-    # 2. 挑战：使用 PolarLocations 均布 12 颗越野防滑爪齿 (14x2.5x3.5)
-    # with Locations((7, 0, 0)):
-    #     with PolarLocations(radius=17.5, count=12):
-    #         Box(14, 2.5, 3.5)
+    # 2. 挑战：使用 PolarLocations 均布 12 颗越野防滑爪齿 (2.5x3.5x14)
+    # with PolarLocations(radius=17.5, count=12):
+    #     Box(2.5, 3.5, 14)
 `,
     solutionCode: `from build123d import *
 
 with BuildPart() as part:
-    # 1. 轮毂基体与轴孔
-    with BuildSketch(Plane.YZ) as sk:
-        Circle(radius=18)
-        Circle(radius=4, mode=Mode.SUBTRACT)
-    extrude(amount=14)
+    # 1. 轮毂基体与中心轴孔
+    Cylinder(radius=18, height=14)
+    Hole(radius=4, depth=14)
 
     # 2. 12 齿外轮廓越野防滑爪
-    with Locations((7, 0, 0)):
-        with PolarLocations(radius=17.5, count=12):
-            Box(14, 2.5, 3.5)
+    with PolarLocations(radius=17.5, count=12):
+        Box(2.5, 3.5, 14)
 `,
     hint: "轮子截面在 Plane.YZ 平面上沿 X 轴拉伸 14mm，齿爪在中心 X=7 处通过 PolarLocations 绕轮心均匀环绕分布。",
     karpathyNote: "参数化封装意味着只要改变齿数一个变量，整个车轮就会自动重新自适应生成，这就是算法建模的力量。",
@@ -370,37 +363,37 @@ with BuildPart() as part:
     # 1. 中心差速主横梁
     Box(12, 48, 6)
 
-    # 2. 挑战：构建左右摇臂骨架 (Polyline 三角折线) 与轮轴枢纽座
+    # 2. 挑战：构建左右摇臂骨架与 6 轮安装枢纽柱
     # for y_pos in [24, -28]:
-    #     with Locations((0, y_pos, -4)):
-    #         with BuildSketch(Plane.XZ) as sk:
-    #             with BuildLine() as ln:
-    #                 Polyline([(-24, -8), (0, 4), (24, -8), (-24, -8)])
-    #             make_face()
-    #         extrude(amount=4)
-    # with Locations((0, 0, -8)):
-    #     with GridLocations(48, 54, 2, 2):
-    #         Cylinder(radius=4, height=6)
+    #     with BuildSketch(Plane.XZ.offset(y_pos)):
+    #         with BuildLine():
+    #             Polyline([(-24, -8), (-24, -4), (0, 4), (24, -4), (24, -8), (0, 0), (-24, -8)])
+    #         make_face()
+    #     extrude(amount=4)
+    # for x_pos in [-24, 0, 24]:
+    #     for y_pos in [-26, 26]:
+    #         with Locations((x_pos, y_pos, -6)):
+    #             Cylinder(radius=4.5, height=8)
 `,
     solutionCode: `from build123d import *
 
 with BuildPart() as part:
-    # 1. 中心差速主梁与转向架轴
+    # 1. 中心差速主横梁
     Box(12, 48, 6)
 
-    # 2. 左右两侧主摇臂 (Rocker-Bogie)
+    # 2. 左右两侧主副摇臂 (Rocker-Bogie)
     for y_pos in [24, -28]:
-        with Locations((0, y_pos, -4)):
-            with BuildSketch(Plane.XZ) as sk:
-                with BuildLine() as ln:
-                    Polyline([(-24, -8), (0, 4), (24, -8), (-24, -8)])
-                make_face()
-            extrude(amount=4)
+        with BuildSketch(Plane.XZ.offset(y_pos)):
+            with BuildLine():
+                Polyline([(-24, -8), (-24, -4), (0, 4), (24, -4), (24, -8), (0, 0), (-24, -8)])
+            make_face()
+        extrude(amount=4)
 
-    # 3. 轮轴枢纽安装基准座
-    with Locations((0, 0, -8)):
-        with GridLocations(48, 54, 2, 2):
-            Cylinder(radius=4, height=6)
+    # 3. 6 轮安装枢纽座
+    for x_pos in [-24, 0, 24]:
+        for y_pos in [-26, 26]:
+            with Locations((x_pos, y_pos, -6)):
+                Cylinder(radius=4.5, height=8)
 `,
     hint: "使用 GridLocations(48, 54, 2, 2) 可以一键在 48x54mm 的 4 个对称角点上批量生成轮轴枢纽柱。",
     karpathyNote: "自平衡悬挂不需要弹簧，而是依靠纯几何杠杆传递力矩。在 CAD 中清晰表达杠杆连杆，你就能理解它的被动适应性。",
@@ -430,14 +423,19 @@ with BuildPart() as part:
     # 1. 机械臂回转基座
     Cylinder(radius=8, height=6)
 
-    # 2. 挑战：添加大臂、小臂和末端带内腔的铲斗
-    # with Locations((0, 0, 6)):
-    #     Box(6, 6, 32)
-    # with Locations((14, 0, 30)):
-    #     Box(5, 5, 26)
-    # with Locations((28, 0, 16)):
+    # 2. 挑战：添加大臂、肘关节、前伸小臂与末端取样铲斗
+    # with Locations((0, 0, 16)):
+    #     Box(6, 6, 26)
+    # with Locations((0, 0, 29)):
+    #     Cylinder(radius=4.5, height=8)
+    # with Locations((11, 0, 29)):
+    #     Box(22, 5, 5)
+    # with Locations((22, 0, 27)):
+    #     Cylinder(radius=3.5, height=7)
+    # with Locations((28, 0, 25)):
     #     Box(12, 14, 8)
-    #     offset(amount=-1.5, openings=part.faces().sort_by(Axis.Z)[-1])
+    # with Locations((28, 0, 26)):
+    #     Box(9, 11, 8, mode=Mode.SUBTRACT)
 `,
     solutionCode: `from build123d import *
 
@@ -445,18 +443,27 @@ with BuildPart() as part:
     # 1. 回转云台底座
     Cylinder(radius=8, height=6)
 
-    # 2. 大臂 (伸展 32mm)
-    with Locations((0, 0, 6)):
-        Box(6, 6, 32)
+    # 2. 垂直大臂
+    with Locations((0, 0, 16)):
+        Box(6, 6, 26)
 
-    # 3. 肘部连结与小臂 (伸展 26mm)
-    with Locations((14, 0, 30)):
-        Box(5, 5, 26)
+    # 3. 肘关节枢纽
+    with Locations((0, 0, 29)):
+        Cylinder(radius=4.5, height=8)
 
-    # 4. 末端土壤采样铲斗 (顶面开口薄壁掏空)
-    with Locations((28, 0, 16)):
+    # 4. 前伸小臂
+    with Locations((11, 0, 29)):
+        Box(22, 5, 5)
+
+    # 5. 腕部关节
+    with Locations((22, 0, 27)):
+        Cylinder(radius=3.5, height=7)
+
+    # 6. 末端土壤采样铲斗 (与小臂末端连接并掏空内腔)
+    with Locations((28, 0, 25)):
         Box(12, 14, 8)
-        offset(amount=-1.5, openings=part.faces().sort_by(Axis.Z)[-1])
+    with Locations((28, 0, 26)):
+        Box(9, 11, 8, mode=Mode.SUBTRACT)
 `,
     hint: "通过 offset(amount=-1.5, openings=part.faces().sort_by(Axis.Z)[-1]) 可以自动把实心长方体顶部开口并向内掏空 1.5mm，瞬间形成结实的铲斗结构！",
     karpathyNote: "机械臂是一棵空间变换树。理解每一个关节的局部坐标变换，你就掌握了机器人学最核心的齐次变换矩阵。",
@@ -491,10 +498,12 @@ with BuildPart() as part:
 
     # 2. 挑战：使用半径 32 的内半球差集掏出中空夹层，并添加地基圈梁和顶部采光天窗
     # Sphere(radius=32, mode=Mode.SUBTRACT)
-    # Cylinder(radius=37, height=4)
-    # Hole(radius=31, depth=4)
-    # with Locations((0, 0, 34)):
+    # with Locations((0, 0, 2)):
+    #     Cylinder(radius=37, height=4)
+    #     Hole(radius=31, depth=4)
+    # with Locations((0, 0, 35)):
     #     Cylinder(radius=10, height=3)
+    #     Hole(radius=6, depth=3)
 `,
     solutionCode: `from build123d import *
 
@@ -507,12 +516,14 @@ with BuildPart() as part:
     Sphere(radius=32, mode=Mode.SUBTRACT)
 
     # 3. 环形地基圈梁加固
-    Cylinder(radius=37, height=4)
-    Hole(radius=31, depth=4)
+    with Locations((0, 0, 2)):
+        Cylinder(radius=37, height=4)
+        Hole(radius=31, depth=4)
 
     # 4. 顶部高通量采光天窗
-    with Locations((0, 0, 34)):
+    with Locations((0, 0, 35)):
         Cylinder(radius=10, height=3)
+        Hole(radius=6, depth=3)
 `,
     hint: "split(bisect_by=Plane.XY, keep=Keep.TOP) 会以 XY 平面对球体一刀切削，只保留上半球，非常适合快速构造大型建筑穹顶。",
     karpathyNote: "大自然中最稳定的受压结构就是穹顶。用双层薄壳代替笨重的实心砖石，这是人类进入太空时代的工程自觉。",
@@ -546,13 +557,11 @@ with BuildPart() as part:
     extrude(amount=36)
 
     # 2. 挑战：在廊桥外侧对接均压过渡圆筒舱与密封门
-    # with Locations((0, 36, 0)):
+    # with Locations((36, 0, 0)):
     #     Cylinder(radius=14, height=24)
-    # with Locations((0, 36, 22)):
-    #     Cylinder(radius=16, height=3)
-    #     Hole(radius=11, depth=3)
-    # with Locations((0, 36, 23)):
-    #     Cylinder(radius=10, height=2)
+    # with Locations((36, 0, 13)):
+    #     Cylinder(radius=16, height=2)
+    #     Hole(radius=10, depth=2)
 `,
     solutionCode: `from build123d import *
 
@@ -564,15 +573,13 @@ with BuildPart() as part:
     extrude(amount=36)
 
     # 2. 均压过渡气闸舱体
-    with Locations((0, 36, 0)):
+    with Locations((36, 0, 0)):
         Cylinder(radius=14, height=24)
 
-    # 3. 双向外舱门气动密封法兰环与门体
-    with Locations((0, 36, 22)):
-        Cylinder(radius=16, height=3)
-        Hole(radius=11, depth=3)
-    with Locations((0, 36, 23)):
-        Cylinder(radius=10, height=2)
+    # 3. 双向外舱门气动密封法兰环
+    with Locations((36, 0, 13)):
+        Cylinder(radius=16, height=2)
+        Hole(radius=10, depth=2)
 `,
     hint: "注意各个构件的坐标平移 Locations((0, 36, ...))，确保气闸室精准贴在廊桥的末端开口处，形成无缝对接。",
     karpathyNote: "在极端真空与沙尘暴面前，每一个连接处都是生死防线。模块化对接必须保证零间隙与尺寸闭环。",
@@ -605,9 +612,18 @@ with BuildPart() as part:
     # 2. 挑战：使用 for 循环按 60° 步进生成 5 层错位展开水培托盘，并添加储氧罐
     # for i in range(5):
     #     angle = i * 60
-    #     z = 8 + i * 8
-    #     with Locations((12, 0, z)):
-    #         Box(16, 12, 3)
+    #     z = -18 + i * 9
+    #     with Locations(Location((0, 0, z), (0, 0, angle))):
+    #         with Locations((12, 0, 0)):
+    #             Box(16, 12, 3)
+    # with Locations((-12, 0, -18)):
+    #     Box(16, 16, 4)
+    # with Locations((-16, 0, -5)):
+    #     Cylinder(radius=4, height=30)
+    # with Locations((-20, 6, -7)):
+    #     Cylinder(radius=3.5, height=26)
+    # with Locations((-20, -6, -7)):
+    #     Cylinder(radius=3.5, height=26)
 `,
     solutionCode: `from build123d import *
 
@@ -615,19 +631,22 @@ with BuildPart() as part:
     # 1. 中央生态循环水柱
     Cylinder(radius=5, height=50)
 
-    # 2. 5 层 60 度交错螺旋水培托盘
+    # 2. 5 层 60 度交错空间螺旋水培托盘
     for i in range(5):
         angle = i * 60
-        z = 8 + i * 8
-        with Locations((12, 0, z)):
-            Box(16, 12, 3)
+        z = -18 + i * 9
+        with Locations(Location((0, 0, z), (0, 0, angle))):
+            with Locations((12, 0, 0)):
+                Box(16, 12, 3)
 
-    # 3. 三联高压氧气胶囊储罐
-    with Locations((-16, 0, 0)):
+    # 3. 储罐固定安装基板与三联高压储罐
+    with Locations((-12, 0, -18)):
+        Box(16, 16, 4)
+    with Locations((-16, 0, -5)):
         Cylinder(radius=4, height=30)
-    with Locations((-22, 6, 0)):
+    with Locations((-20, 6, -7)):
         Cylinder(radius=3.5, height=26)
-    with Locations((-22, -6, 0)):
+    with Locations((-20, -6, -7)):
         Cylinder(radius=3.5, height=26)
 `,
     hint: "螺旋托盘通过在循环中更新高度 z 与悬臂偏移，非常优雅高效地构建出向外辐射的光伏采光托盘。",
@@ -659,15 +678,16 @@ with BuildPart() as part:
     Sphere(radius=25)
     split(bisect_by=Plane.XY, keep=Keep.TOP)
 
-    # 2. 挑战：添加连接管道、正六边形科研能源舱 (RegularPolygon 6) 与能源顶盖并总装
+    # 2. 挑战：添加连接走廊、正六边形科研能源舱 (RegularPolygon 6) 与微电网顶盖
     # with BuildSketch(Plane.YZ) as sk:
-    #     Circle(radius=5)
+    #     with Locations((0, 5)):
+    #         Circle(radius=5)
     # extrude(amount=40)
-    # with Locations((0, 40, 0)):
-    #     with BuildSketch() as sk2:
+    # with BuildSketch() as sk2:
+    #     with Locations((40, 0)):
     #         RegularPolygon(radius=18, side_count=6)
-    #     extrude(amount=16)
-    # with Locations((0, 40, 16)):
+    # extrude(amount=16)
+    # with Locations((40, 0, 17)):
     #     Cylinder(radius=14, height=2)
 `,
     solutionCode: `from build123d import *
@@ -679,17 +699,18 @@ with BuildPart() as part:
 
     # 2. 联络通道廊桥
     with BuildSketch(Plane.YZ) as sk:
-        Circle(radius=5)
+        with Locations((0, 5)):
+            Circle(radius=5)
     extrude(amount=40)
 
     # 3. 创新能源科研舱 (正六边形棱柱)
-    with Locations((0, 40, 0)):
-        with BuildSketch() as sk2:
+    with BuildSketch() as sk2:
+        with Locations((40, 0)):
             RegularPolygon(radius=18, side_count=6)
-        extrude(amount=16)
+    extrude(amount=16)
 
     # 4. 太阳能微电网塔顶
-    with Locations((0, 40, 16)):
+    with Locations((40, 0, 17)):
         Cylinder(radius=14, height=2)
 `,
     hint: "RegularPolygon(radius=18, side_count=6) 会生成外接圆半径为 18mm 的标准正六边形，相比圆柱更具蜂巢扩展和模块化拼接优势。",
@@ -726,10 +747,10 @@ with BuildPart() as part:
     # with Locations((-20, 0, 2)):
     #     Sphere(radius=18)
     #     split(bisect_by=Plane.XY, keep=Keep.TOP)
-    # with Locations((25, 20, 2)):
+    # with Locations((25, 20, 10)):
     #     Cylinder(radius=12, height=16)
     #     Hole(radius=8, depth=16)
-    # with Locations((15, -20, 2)):
+    # with Locations((15, -20, 6)):
     #     Box(22, 16, 8)
 `,
     solutionCode: `from build123d import *
@@ -744,12 +765,12 @@ with BuildPart() as part:
         split(bisect_by=Plane.XY, keep=Keep.TOP)
 
     # 3. 着陆先锋舱
-    with Locations((25, 20, 2)):
+    with Locations((25, 20, 10)):
         Cylinder(radius=12, height=16)
         Hole(radius=8, depth=16)
 
     # 4. 探路火星车底盘轮廓
-    with Locations((15, -20, 2)):
+    with Locations((15, -20, 6)):
         Box(22, 16, 8)
 `,
     hint: "所有建筑和车辆的 Z 轴起始位置设为 Locations((..., ..., 2))，正好精准坐落在厚度为 4mm (Z范围 -2~+2) 的地表之上。",
@@ -781,28 +802,26 @@ with BuildPart() as part:
     Box(40, 40, 10)
     fillet(part.edges().filter_by(Axis.Z), radius=5.0)
 
-    # 2. 顶面立柱与中心深孔
-    with Locations((0, 0, 5)):
-        Cylinder(radius=12, height=15)
-
-    # 3. 挑战：在顶面加工中心孔，并在底面加工 4 颗直径 3.5mm 的螺栓孔
-    # Hole(radius=8, depth=20)
+    # 2. 挑战：在顶面添加立柱，并加工中心通孔与四角安装孔
+    # with Locations((0, 0, 12.5)):
+    #     Cylinder(radius=12, height=15)
+    # Hole(radius=8, depth=25)
     # with GridLocations(30, 30, 2, 2):
     #     Hole(radius=1.75, depth=10)
 `,
     solutionCode: `from build123d import *
 
 with BuildPart() as part:
-    # 规范工业级水密气闸基座实体 (Watertight Solid)
+    # 1. 规范工业级水密气闸基座实体 (Watertight Solid)
     Box(40, 40, 10)
     fillet(part.edges().filter_by(Axis.Z), radius=5.0)
 
-    # 顶面立柱
-    with Locations((0, 0, 5)):
+    # 2. 顶面立柱
+    with Locations((0, 0, 12.5)):
         Cylinder(radius=12, height=15)
 
-    # 内部中心通孔与 4 角安装孔
-    Hole(radius=8, depth=20)
+    # 3. 内部中心通孔与 4 角安装孔
+    Hole(radius=8, depth=25)
     with GridLocations(30, 30, 2, 2):
         Hole(radius=1.75, depth=10)
 `,
@@ -832,28 +851,30 @@ with BuildPart() as part:
 
 with BuildPart() as part:
     # 1. 建立三级阶梯传动主轴
-    Cylinder(radius=12, height=15)
-    with Locations((0, 0, 15)):
+    with Locations((0, 0, 7.5)):
+        Cylinder(radius=12, height=15)
+    with Locations((0, 0, 27.5)):
         Cylinder(radius=8, height=25)
-    with Locations((0, 0, 40)):
+    with Locations((0, 0, 47.5)):
         Cylinder(radius=5, height=15)
 
     # 2. 挑战：在第二级轴段侧面切削一个动力平键槽 (box 4x3x18)
-    # with Locations((0, 8, 25)):
+    # with Locations((0, 8, 27.5)):
     #     Box(4, 3, 18, mode=Mode.SUBTRACT)
 `,
     solutionCode: `from build123d import *
 
 with BuildPart() as part:
-    # 阶梯传动主轴与多级轴承位
-    Cylinder(radius=12, height=15)
-    with Locations((0, 0, 15)):
+    # 1. 阶梯传动主轴与多级轴承位
+    with Locations((0, 0, 7.5)):
+        Cylinder(radius=12, height=15)
+    with Locations((0, 0, 27.5)):
         Cylinder(radius=8, height=25)
-    with Locations((0, 0, 40)):
+    with Locations((0, 0, 47.5)):
         Cylinder(radius=5, height=15)
 
-    # 键槽铣削
-    with Locations((0, 8, 25)):
+    # 2. 键槽铣削
+    with Locations((0, 8, 27.5)):
         Box(4, 3, 18, mode=Mode.SUBTRACT)
 `,
     hint: "在连续调用 with Locations((0, 0, z)): Cylinder() 时，每次都会自动在轴肩表面堆叠下一级轴段；侧边放置 Box 并设为 Mode.SUBTRACT 即可完成键槽铣削。",
@@ -887,7 +908,7 @@ with BuildPart() as part:
     extrude(amount=5)
 
     # 2. 挑战：装配荣誉外环、核心三角星并切出中央喷管通道
-    # with Locations((0, 0, 5)):
+    # with Locations((0, 0, 6.5)):
     #     Cylinder(radius=24, height=3)
     #     Hole(radius=20, depth=3)
     # with Locations((0, 0, 5)):
@@ -900,19 +921,23 @@ with BuildPart() as part:
 
 # 火星拓荒者计划 · 先锋荣誉总装勋章与火箭矢量喷口
 with BuildPart() as part:
+    # 1. 八角先锋荣誉勋章基座
     with BuildSketch() as sk1:
         RegularPolygon(radius=28, side_count=8)
     extrude(amount=5)
 
-    with Locations((0, 0, 5)):
+    # 2. 荣誉外环
+    with Locations((0, 0, 6.5)):
         Cylinder(radius=24, height=3)
         Hole(radius=20, depth=3)
 
+    # 3. 核心三角星
     with Locations((0, 0, 5)):
         with BuildSketch() as sk2:
             RegularPolygon(radius=14, side_count=3)
         extrude(amount=4)
 
+    # 4. 矢量喷管孔
     Hole(radius=6, depth=12)
 `,
     hint: "RegularPolygon(radius=14, side_count=3) 生成正三角形核心星，配合 side_count=8 的八角底座与同心环，呈现极具未来科技感的航天勋章总成。",

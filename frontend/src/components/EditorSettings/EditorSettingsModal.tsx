@@ -17,6 +17,8 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
+  Code2,
+  Blocks,
 } from "lucide-react";
 import { testAiApiConnection, DEFAULT_AI_CONFIG } from "@/lib/aiCadSkill";
 
@@ -28,6 +30,7 @@ export interface EditorSettings {
   indentGuides: boolean;
   translateErrors: boolean;
   toolboxPinned: boolean;
+  defaultViewMode: "code" | "block";
   // 智能体配置 (OpenAI 兼容接口 / Gemini / DeepSeek)
   aiBaseUrl: string;
   aiApiKey: string;
@@ -60,6 +63,7 @@ export const DEFAULT_EDITOR_SETTINGS: EditorSettings = {
   indentGuides: true,
   translateErrors: true,
   toolboxPinned: false,
+  defaultViewMode: "code",
   aiBaseUrl: DEFAULT_AI_CONFIG.baseUrl,
   aiApiKey: DEFAULT_AI_CONFIG.apiKey,
   aiModel: DEFAULT_AI_CONFIG.model,
@@ -351,6 +355,42 @@ export const EditorSettingsModal: React.FC<EditorSettingsModalProps> = ({
                   />
                   <div className="w-12 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-6 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#22c55e]"></div>
                 </label>
+              </div>
+
+              <div className="h-px bg-gray-100 my-1"></div>
+
+              {/* 7. 默认工作区视图模式 (代码优先，可配置积木) */}
+              <div className="flex items-center justify-between py-1">
+                <div>
+                  <span className="font-medium text-gray-700">默认工作区模式：</span>
+                  <div className="text-[11px] text-gray-400">打开或刷新工作台时的首选编辑视图</div>
+                </div>
+                <div className="flex items-center p-0.5 bg-gray-100 rounded-lg text-xs font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => updateSetting("defaultViewMode", "code")}
+                    className={`px-3 py-1.5 rounded-md transition flex items-center gap-1.5 ${
+                      settings.defaultViewMode !== "block"
+                        ? "bg-white text-gray-900 shadow-xs font-bold"
+                        : "text-gray-500 hover:text-gray-800"
+                    }`}
+                  >
+                    <Code2 size={13} />
+                    <span>代码模式 (默认)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateSetting("defaultViewMode", "block")}
+                    className={`px-3 py-1.5 rounded-md transition flex items-center gap-1.5 ${
+                      settings.defaultViewMode === "block"
+                        ? "bg-white text-amber-600 shadow-xs font-bold"
+                        : "text-gray-500 hover:text-gray-800"
+                    }`}
+                  >
+                    <Blocks size={13} />
+                    <span>积木模式</span>
+                  </button>
+                </div>
               </div>
             </div>
           )}

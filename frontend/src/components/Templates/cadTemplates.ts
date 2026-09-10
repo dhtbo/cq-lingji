@@ -98,11 +98,12 @@ with BuildPart() as part:
         Rectangle(12.0, 12.0)
     # 放样成形
     loft()
+    # 4 条侧棱倒圆角
+    side_edges = [e for e in part.edges() if 1.0 < e.center().Z < 7.0]
+    fillet(side_edges, radius=1.0)
     # 顶面指尖接触凹球切削
     with Locations((0, 0, 8.0 + 15.0)):
         Sphere(radius=16.0, mode=Mode.SUBTRACT)
-    # 侧棱倒圆角
-    fillet(part.edges().filter_by(Axis.Z), radius=1.0)
 `,
   },
   {
@@ -135,14 +136,14 @@ with BuildPart() as part:
     # 切去右上半部形成 L 截面
     with Locations((7.5, 0, 7.5)):
         Box(20.0, 32.0, 20.0, mode=Mode.SUBTRACT)
+    # 棱边倒圆角过渡
+    fillet(part.edges().filter_by(Axis.Y), radius=1.5)
     # 安装孔 1 (立壁)
-    with Locations((-5.0, 0, 5.0)):
-        Hole(radius=3.0, depth=20.0)
+    with Locations((-8.0, 0, 5.0)):
+        Hole(radius=2.5, depth=20.0)
     # 安装孔 2 (底板)
-    with Locations((5.0, 0, -5.0)):
-        Hole(radius=3.0, depth=20.0)
-    # 外棱边倒角
-    fillet(part.edges().filter_by(Axis.Y), radius=2.0)
+    with Locations((5.0, 0, -8.0)):
+        Hole(radius=2.5, depth=20.0)
 `,
   },
   {

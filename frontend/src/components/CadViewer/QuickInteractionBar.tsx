@@ -177,14 +177,26 @@ export const QuickInteractionBar: React.FC<QuickInteractionBarProps> = ({
     setPosition(null);
   };
 
+  const getFaceExpr = (selector: string, varName: string = targetVar) => {
+    if (selector === ">Z") return `${varName}.faces().sort_by(Axis.Z)[-1]`;
+    if (selector === "<Z") return `${varName}.faces().sort_by(Axis.Z)[0]`;
+    if (selector === ">X") return `${varName}.faces().sort_by(Axis.X)[-1]`;
+    if (selector === "<X") return `${varName}.faces().sort_by(Axis.X)[0]`;
+    if (selector === ">Y") return `${varName}.faces().sort_by(Axis.Y)[-1]`;
+    if (selector === "<Y") return `${varName}.faces().sort_by(Axis.Y)[0]`;
+    if (selector === "|Z") return `${varName}.faces().filter_by(Axis.Z)`;
+    return `${varName}.faces().sort_by(Axis.Z)[-1]`;
+  };
+
   // --- 面操作生成逻辑 ---
   // 1. 面拉伸凸台
   const handleExecuteFaceExtrude = () => {
+    const faceExpr = getFaceExpr(cachedFaceSelector);
     let snippet = "";
     if (extrudeShape === "circle") {
-      snippet = `${targetVar} = ${targetVar}.faces("${cachedFaceSelector}").workplane().circle(${extrudeRadius}).extrude(${extrudeDistance})\n`;
+      snippet = `    with BuildSketch(${faceExpr}):\n        Circle(radius=${extrudeRadius})\n    extrude(amount=${extrudeDistance})\n`;
     } else {
-      snippet = `${targetVar} = ${targetVar}.faces("${cachedFaceSelector}").workplane().rect(${extrudeRect.w}, ${extrudeRect.h}).extrude(${extrudeDistance})\n`;
+      snippet = `    with BuildSketch(${faceExpr}):\n        Rectangle(${extrudeRect.w}, ${extrudeRect.h})\n    extrude(amount=${extrudeDistance})\n`;
     }
     onInjectCode(snippet);
     showToast(`已在表面 [${cachedFaceSelector}] 拉伸凸台 (${extrudeDistance}mm)`);
@@ -192,11 +204,12 @@ export const QuickInteractionBar: React.FC<QuickInteractionBarProps> = ({
 
   // 2. 面挖槽
   const handleExecuteFacePocket = () => {
+    const faceExpr = getFaceExpr(cachedFaceSelector);
     let snippet = "";
     if (pocketShape === "rect") {
-      snippet = `${targetVar} = ${targetVar}.faces("${cachedFaceSelector}").workplane().rect(${pocketRect.w}, ${pocketRect.h}).cutBlind(-${pocketDepth})\n`;
+      snippet = `    with BuildSketch(${faceExpr}):\n        Rectangle(${pocketRect.w}, ${pocketRect.h})\n    extrude(amount=-${pocketDepth}, mode=Mode.SUBTRACT)\n`;
     } else {
-      snippet = `${targetVar} = ${targetVar}.faces("${cachedFaceSelector}").workplane().circle(${pocketRadius}).cutBlind(-${pocketDepth})\n`;
+      snippet = `    with BuildSketch(${faceExpr}):\n        Circle(radius=${pocketRadius})\n    extrude(amount=-${pocketDepth}, mode=Mode.SUBTRACT)\n`;
     }
     onInjectCode(snippet);
     showToast(`已在表面 [${cachedFaceSelector}] 盲切挖槽 (${pocketDepth}mm)`);
@@ -204,26 +217,30 @@ export const QuickInteractionBar: React.FC<QuickInteractionBarProps> = ({
 
   // 3. 表面中心打孔
   const handleExecuteFaceHole = () => {
-    const snippet = `${targetVar} = ${targetVar}.faces("${cachedFaceSelector}").hole(diameter=${holeDia}, depth=${holeDepth})\n`;
+    const faceExpr = getFaceExpr(cachedFaceSelector);
+    const snippet = `    with Locations(${faceExpr}):\n        Hole(radius=${holeDia / 2}, depth=${holeDepth})\n`;
     onInjectCode(snippet);
     showToast(`已在表面 [${cachedFaceSelector}] 钻孔 (Φ${holeDia} 深${holeDepth}mm)`);
   };
 
   // 4. 表面抽壳
   const handleExecuteFaceShell = () => {
-    const snippet = `${targetVar} = ${targetVar}.faces("${cachedFaceSelector}").shell(-2.0)\n`;
+    const faceExpr = getFaceExpr(cachedFaceSelector);
+    const snippet = `    offset(amount=-2.0, openings=${faceExpr})\n`;
     onInjectCode(snippet);
     showToast(`已在表面 [${cachedFaceSelector}] 执行薄壁抽壳 (-2mm)`);
   };
 
   // --- 线操作生成逻辑 ---
-  // 1. 棱边倒圆角 (优先支持顶面内孔口：faces(">Z").edges("%Circle").fillet(R))
+  // 1. 棱边倒圆角 (优先支持顶面内孔口)
   const handleExecuteEdgeFillet = () => {
     let snippet = "";
     if (cachedEdgeSelector === "%Circle" && cachedFaceSelector) {
-      snippet = `${targetVar} = ${targetVar}.faces("${cachedFaceSelector}").edges("%Circle").fillet(${filletRadius})\n`;
+      snippet = `    fillet(${targetVar}.faces().sort_by(Axis.Z)[-1].edges().filter_by(GeomType.CIRCLE), radius=${filletRadius})\n`;
+    } else if (cachedEdgeSelector === "|Z") {
+      snippet = `    fillet(${targetVar}.edges().filter_by(Axis.Z), radius=${filletRadius})\n`;
     } else {
-      snippet = `${targetVar} = ${targetVar}.edges("${cachedEdgeSelector}").fillet(${filletRadius})\n`;
+      snippet = `    fillet(${targetVar}.faces().sort_by(Axis.Z)[-1].edges(), radius=${filletRadius})\n`;
     }
     onInjectCode(snippet);
     showToast(`已执行倒圆角 fillet(${filletRadius}mm)`);
@@ -231,7 +248,14 @@ export const QuickInteractionBar: React.FC<QuickInteractionBarProps> = ({
 
   // 2. 棱边倒斜角
   const handleExecuteEdgeChamfer = () => {
-    const snippet = `${targetVar} = ${targetVar}.edges("${cachedEdgeSelector}").chamfer(${chamferDist})\n`;
+    let snippet = "";
+    if (cachedEdgeSelector === "%Circle") {
+      snippet = `    chamfer(${targetVar}.faces().sort_by(Axis.Z)[-1].edges().filter_by(GeomType.CIRCLE), length=${chamferDist})\n`;
+    } else if (cachedEdgeSelector === "|Z") {
+      snippet = `    chamfer(${targetVar}.edges().filter_by(Axis.Z), length=${chamferDist})\n`;
+    } else {
+      snippet = `    chamfer(${targetVar}.faces().sort_by(Axis.Z)[-1].edges(), length=${chamferDist})\n`;
+    }
     onInjectCode(snippet);
     showToast(`已执行倒斜角 chamfer(${chamferDist}mm)`);
   };
@@ -740,7 +764,7 @@ export const QuickInteractionBar: React.FC<QuickInteractionBarProps> = ({
             <div className="flex items-center space-x-2">
               <button
                 onClick={() => {
-                  const snippet = `part = part.faces(">Z").workplane().pushPoints([(${pickedVertex.x}, ${pickedVertex.y})]).hole(diameter=4, depth=6)\n`;
+                  const snippet = `    with Locations((${pickedVertex.x}, ${pickedVertex.y}, ${pickedVertex.z})):\n        Hole(radius=2.0, depth=6)\n`;
                   onInjectCode(snippet);
                   showToast("已在此坐标中心打孔 (Φ4mm)");
                 }}

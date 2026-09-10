@@ -21,7 +21,43 @@ export const BUILD123D_TOOLBOX = {
         },
         {
           kind: "block",
+          type: "b3d_select_face",
+        },
+        {
+          kind: "block",
           type: "b3d_build_line",
+        },
+        {
+          kind: "block",
+          type: "b3d_line",
+        },
+        {
+          kind: "block",
+          type: "b3d_three_point_arc",
+        },
+        {
+          kind: "block",
+          type: "b3d_make_face",
+        },
+        {
+          kind: "block",
+          type: "b3d_var_assign",
+        },
+        {
+          kind: "block",
+          type: "b3d_multi_var_assign",
+        },
+        {
+          kind: "block",
+          type: "b3d_var_get",
+        },
+        {
+          kind: "block",
+          type: "math_arithmetic",
+        },
+        {
+          kind: "block",
+          type: "b3d_custom_code",
         },
         {
           kind: "block",
@@ -68,10 +104,32 @@ export const BUILD123D_TOOLBOX = {
         {
           kind: "block",
           type: "b3d_sketch_rect",
+          inputs: {
+            WIDTH: {
+              shadow: {
+                type: "math_number",
+                fields: { NUM: 20 },
+              },
+            },
+            HEIGHT: {
+              shadow: {
+                type: "math_number",
+                fields: { NUM: 20 },
+              },
+            },
+          },
         },
         {
           kind: "block",
           type: "b3d_sketch_circle",
+          inputs: {
+            RADIUS: {
+              shadow: {
+                type: "math_number",
+                fields: { NUM: 10 },
+              },
+            },
+          },
         },
         {
           kind: "block",
@@ -91,6 +149,10 @@ export const BUILD123D_TOOLBOX = {
         },
         {
           kind: "block",
+          type: "b3d_three_point_arc",
+        },
+        {
+          kind: "block",
           type: "b3d_make_face",
         },
         {
@@ -105,6 +167,10 @@ export const BUILD123D_TOOLBOX = {
           kind: "block",
           type: "b3d_sketch_text",
         },
+        {
+          kind: "block",
+          type: "b3d_mirror",
+        },
       ],
     },
     {
@@ -115,10 +181,26 @@ export const BUILD123D_TOOLBOX = {
         {
           kind: "block",
           type: "b3d_extrude",
+          inputs: {
+            AMOUNT: {
+              shadow: {
+                type: "math_number",
+                fields: { NUM: 10 },
+              },
+            },
+          },
         },
         {
           kind: "block",
           type: "b3d_revolve",
+          inputs: {
+            ANGLE: {
+              shadow: {
+                type: "math_number",
+                fields: { NUM: 360 },
+              },
+            },
+          },
         },
         {
           kind: "block",
@@ -143,6 +225,10 @@ export const BUILD123D_TOOLBOX = {
         {
           kind: "block",
           type: "b3d_split",
+        },
+        {
+          kind: "block",
+          type: "b3d_mirror",
         },
         {
           kind: "block",
@@ -287,9 +373,45 @@ export const BUILD123D_TOOLBOX = {
     },
     {
       kind: "category",
-      name: "📦 变量",
+      name: "🔢 数学运算",
+      colour: CATEGORY_COLORS.MATH,
+      contents: [
+        {
+          kind: "block",
+          type: "math_number",
+        },
+        {
+          kind: "block",
+          type: "math_arithmetic",
+        },
+        {
+          kind: "block",
+          type: "math_single",
+        },
+      ],
+    },
+    {
+      kind: "category",
+      name: "📦 变量与赋值",
       colour: CATEGORY_COLORS.VARIABLE,
-      custom: "VARIABLE",
+      contents: [
+        {
+          kind: "block",
+          type: "b3d_var_get",
+        },
+        {
+          kind: "block",
+          type: "b3d_var_assign",
+        },
+        {
+          kind: "block",
+          type: "b3d_multi_var_assign",
+        },
+        {
+          kind: "block",
+          type: "b3d_custom_code",
+        },
+      ],
     },
   ],
 };

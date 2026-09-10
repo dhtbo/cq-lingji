@@ -12,12 +12,14 @@ interface BlocklyWorkspaceProps {
   onCodeChange: (code: string) => void;
   workspaceRefOut?: React.MutableRefObject<Blockly.WorkspaceSvg | null>;
   colorMode?: "light" | "dark";
+  onWorkspaceReady?: (ws: Blockly.WorkspaceSvg) => void;
 }
 
 export const BlocklyWorkspace: React.FC<BlocklyWorkspaceProps> = ({
   onCodeChange,
   workspaceRefOut,
   colorMode = "dark",
+  onWorkspaceReady,
 }) => {
   const blocklyDiv = useRef<HTMLDivElement>(null);
   const workspaceRef = useRef<Blockly.WorkspaceSvg | null>(null);
@@ -70,6 +72,9 @@ export const BlocklyWorkspace: React.FC<BlocklyWorkspaceProps> = ({
     workspaceRef.current = workspace;
     if (workspaceRefOut) {
       workspaceRefOut.current = workspace;
+    }
+    if (onWorkspaceReady) {
+      onWorkspaceReady(workspace);
     }
 
     // 5. 插入默认新手 build123d 经典建模积木组合

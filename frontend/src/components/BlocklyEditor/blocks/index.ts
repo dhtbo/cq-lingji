@@ -4,6 +4,7 @@ import { registerOperation3DBlocks } from "./operations3d";
 import { registerTransformBlocks } from "./transforms";
 import { registerMacroBlocks } from "./macros";
 import { registerCommentBlocks } from "./comments";
+import { registerVariableBlocks } from "./variables";
 
 let initialized = false;
 
@@ -18,6 +19,7 @@ export function registerAllBuild123dBlocks() {
   registerTransformBlocks();
   registerMacroBlocks();
   registerCommentBlocks();
+  registerVariableBlocks();
   initialized = true;
 }
 

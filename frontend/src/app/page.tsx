@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import * as Blockly from "blockly";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
@@ -24,6 +24,7 @@ import {
 } from "@/lib/projectStorage";
 import { convertPythonToBlockly } from "@/lib/pythonToBlockly";
 import { convertBuild123dToCadQuery } from "@/lib/build123dToCadquery";
+import { workspaceToBuild123d } from "@/components/BlocklyEditor/generator/build123d";
 import { useDebounce } from "@/lib/useDebounce";
 import {
   renderBuild123dCode,
@@ -67,8 +68,8 @@ const ThreeCadViewer = dynamic(
 
 export default function StudioPage() {
   const [code, setCode] = useState<string>("");
-  const [isLocked, setIsLocked] = useState<boolean>(true); // 默认跟随积木锁定
-  const isLockedRef = useRef<boolean>(true);
+  const [isLocked, setIsLocked] = useState<boolean>(false); // 默认代码模式下自由编写代码
+  const isLockedRef = useRef<boolean>(false);
   const [meshData, setMeshData] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [execTime, setExecTime] = useState<number | null>(null);
@@ -111,13 +112,18 @@ export default function StudioPage() {
     });
   }, []);
 
-  //  视图模态：'block' (积木模式) | 'code' (代码模式) | 'split' (双屏联动)
-  const [viewMode, setViewMode] = useState<ViewMode>("split");
+  // 视图模态：'code' (代码模式，默认) | 'block' (积木模式)
+  const [viewMode, setViewMode] = useState<ViewMode>("code");
   const [projectName, setProjectName] = useState<string>("我的3D作品.py");
   const [isSaved, setIsSaved] = useState<boolean>(true);
   const [zoomLevel, setZoomLevel] = useState<number>(100);
 
-  //  侧边浮动工具栈展开状态
+  // 待恢复的积木 XML 与积木代码比对引用
+  const pendingBlocklyXmlRef = useRef<string | null>(null);
+  const lastBlocklyCodeRef = useRef<string>("");
+  const blocklyWorkspaceRef = useRef<any>(null);
+
+  // 侧边浮动工具栈展开状态
   const [isAiOpen, setIsAiOpen] = useState<boolean>(false);
   const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
   const [isPaletteOpen, setIsPaletteOpen] = useState<boolean>(false);
@@ -139,7 +145,11 @@ export default function StudioPage() {
     try {
       const saved = localStorage.getItem("cadquery_editor_settings");
       if (saved) {
-        setSettings((prev) => ({ ...prev, ...JSON.parse(saved) }));
+        const parsed = JSON.parse(saved);
+        setSettings((prev) => ({ ...prev, ...parsed }));
+        if (parsed.defaultViewMode) {
+          setViewMode(parsed.defaultViewMode);
+        }
       }
     } catch { }
   }, []);
@@ -155,7 +165,7 @@ export default function StudioPage() {
   const [saveToastMsg, setSaveToastMsg] = useState<string | null>(null);
   const showToast = useCallback((msg: string) => {
     setSaveToastMsg(msg);
-    setTimeout(() => setSaveToastMsg(null), 3000);
+    setTimeout(() => setSaveToastMsg(null), 3500);
   }, []);
 
   // 页面加载时自动恢复本地暂存工程
@@ -166,9 +176,24 @@ export default function StudioPage() {
         setProjectName(savedProject.projectName || "我的3D作品.py");
         setCode(savedProject.code);
         setIsSaved(true);
+        if (savedProject.blocklyXml) {
+          pendingBlocklyXmlRef.current = savedProject.blocklyXml;
+          if (blocklyWorkspaceRef.current) {
+            try {
+              const dom = Blockly.utils.xml.textToDom(savedProject.blocklyXml);
+              blocklyWorkspaceRef.current.clear();
+              Blockly.Xml.domToWorkspace(dom, blocklyWorkspaceRef.current);
+            } catch (e) {
+              console.warn("恢复积木工作区失败:", e);
+            }
+          }
+        }
+        showToast(`📦 已自动恢复本地暂存工程「${savedProject.projectName || "我的3D作品"}」`);
       }
-    } catch { }
-  }, []);
+    } catch (e) {
+      console.warn("读取本地暂存工程失败:", e);
+    }
+  }, [showToast]);
 
   // 全工作台主题设计令牌 (支持 6 色主题与高对比度文字自动计算)
   const themeToken = getThemeToken(settings.themeColor);
@@ -204,10 +229,22 @@ export default function StudioPage() {
     [settings.translateErrors]
   );
 
-  const blocklyWorkspaceRef = useRef<any>(null);
-
   // 防抖 400ms
   const debouncedCode = useDebounce(code, 400);
+
+  // 智能推断当前模型主要实体变量名 (优先匹配 with BuildPart() as <varName>:)
+  const targetPartVar = useMemo(() => {
+    if (!code) return "part";
+    const buildPartMatch = code.match(/with\s+BuildPart\s*\(.*?\)\s*as\s+([a-zA-Z_]\w*)/i);
+    if (buildPartMatch && buildPartMatch[1]) return buildPartMatch[1];
+    const showMatch = code.match(/show_object\s*\(\s*([a-zA-Z_]\w*)/);
+    if (showMatch && showMatch[1]) return showMatch[1];
+    const assignMatches = Array.from(code.matchAll(/^([a-zA-Z_]\w*)\s*=/gm));
+    if (assignMatches.length > 0) {
+      return assignMatches[assignMatches.length - 1][1];
+    }
+    return "part";
+  }, [code]);
 
   // 执行渲染核心逻辑 (支持单步特征时间旅行与控制台 stdout 捕获)
   const performRender = useCallback(
@@ -256,6 +293,16 @@ export default function StudioPage() {
     }
   }, [debouncedCode, performRender]);
 
+  // 暴露全局代码设置钩子以便快速调试与自动化测试
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      (window as any).__setStudioCode = (newCode: string) => {
+        setCode(newCode);
+        performRender(newCode);
+      };
+    }
+  }, [performRender]);
+
   // 后端健康状态自检
   useEffect(() => {
     let timer: any;
@@ -267,33 +314,6 @@ export default function StudioPage() {
     timer = setInterval(check, 8000);
     return () => clearInterval(timer);
   }, []);
-
-  // 全局快捷键绑定 (Ctrl+Enter 运行渲染, Ctrl+S 保存/导出 STEP, Ctrl+F 搜索)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl+Enter or Cmd+Enter: 立即触发渲染
-      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-        e.preventDefault();
-        performRender(code);
-      }
-      // Ctrl+S: 保存
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        handleSave();
-      }
-      // Ctrl+F: 呼出查找替换
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
-        e.preventDefault();
-        setIsSearchOpen((prev) => !prev);
-        if (viewMode === "block") {
-          setViewMode("split");
-        }
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [code, performRender, viewMode]);
 
   // 积木发生改变时的回调
   const handleBlocklyCodeChange = (newCode: string) => {
@@ -349,6 +369,128 @@ export default function StudioPage() {
       showToast("⚠️ 保存失败，请检查浏览器存储权限");
     }
   };
+
+  // 从本地暂存载入工程 (显式读取)
+  const handleLoadSavedProject = useCallback(() => {
+    try {
+      const savedProject = loadProjectFromLocalStorage();
+      if (!savedProject || !savedProject.code) {
+        showToast("⚠️ 本地暂存库暂无工程记录，请先编辑并点击保存");
+        return;
+      }
+      setProjectName(savedProject.projectName || "我的3D作品.py");
+      setCode(savedProject.code);
+      setIsSaved(true);
+      if (savedProject.blocklyXml && blocklyWorkspaceRef.current) {
+        try {
+          Blockly.Events.disable();
+          blocklyWorkspaceRef.current.clear();
+          const dom = Blockly.utils.xml.textToDom(savedProject.blocklyXml);
+          Blockly.Xml.domToWorkspace(dom, blocklyWorkspaceRef.current);
+          Blockly.Events.enable();
+        } catch (e) {
+          console.warn("恢复积木失败:", e);
+        }
+      } else if (blocklyWorkspaceRef.current) {
+        convertPythonToBlockly(savedProject.code, blocklyWorkspaceRef.current);
+      }
+      performRender(savedProject.code);
+      showToast(`📦 已成功载入本地暂存工程「${savedProject.projectName || "我的3D作品"}」`);
+    } catch (e: any) {
+      showToast(`⚠️ 载入暂存工程失败: ${e.message || String(e)}`);
+    }
+  }, [performRender, showToast]);
+
+  // 积木工作区挂载就绪回调
+  const handleWorkspaceReady = useCallback((ws: any) => {
+    blocklyWorkspaceRef.current = ws;
+    if (typeof window !== "undefined") {
+      (window as any).__blocklyWorkspace = ws;
+      (window as any).Blockly = Blockly;
+    }
+    if (pendingBlocklyXmlRef.current) {
+      try {
+        Blockly.Events.disable();
+        ws.clear();
+        const dom = Blockly.utils.xml.textToDom(pendingBlocklyXmlRef.current);
+        Blockly.Xml.domToWorkspace(dom, ws);
+        Blockly.Events.enable();
+      } catch (e) {
+        console.warn("恢复暂存积木失败:", e);
+      }
+    } else if (code && code.trim()) {
+      convertPythonToBlockly(code, ws);
+    }
+  }, [code]);
+
+  // 视图模式无损切换：代码优先，切积木不丢失积木或代码
+  const handleSwitchViewMode = useCallback(
+    (newMode: ViewMode) => {
+      if (newMode === viewMode) return;
+
+      if (newMode === "code") {
+        // 从积木模式切到代码模式：若积木工作区存在，把最新拼装的 Python 代码提取并更新到编辑器
+        if (blocklyWorkspaceRef.current) {
+          try {
+            const generated = workspaceToBuild123d(blocklyWorkspaceRef.current);
+            if (generated && generated.trim()) {
+              setCode(generated);
+              lastBlocklyCodeRef.current = generated;
+            }
+          } catch (e) {
+            console.warn("提取积木代码失败:", e);
+          }
+        }
+        setViewMode("code");
+      } else if (newMode === "block") {
+        // 从代码模式切到积木模式：
+        // 若 Monaco 中的代码与积木上次生成的代码不一致，说明用户编辑了代码，自动逆向转为积木！
+        if (blocklyWorkspaceRef.current) {
+          if (code && code.trim() && code.trim() !== lastBlocklyCodeRef.current.trim()) {
+            const res = convertPythonToBlockly(code, blocklyWorkspaceRef.current);
+            if (res.success) {
+              lastBlocklyCodeRef.current = code;
+            }
+          }
+          // 延迟自适应尺寸
+          setTimeout(() => {
+            if (blocklyWorkspaceRef.current) {
+              Blockly.svgResize(blocklyWorkspaceRef.current);
+            }
+          }, 50);
+        }
+        setViewMode("block");
+      }
+    },
+    [viewMode, code]
+  );
+
+  // 全局快捷键绑定 (Ctrl+Enter 运行渲染, Ctrl+S 保存/导出 STEP, Ctrl+F 搜索)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+Enter or Cmd+Enter: 立即触发渲染
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        performRender(code);
+      }
+      // Ctrl+S: 保存
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        handleSave();
+      }
+      // Ctrl+F: 呼出查找替换
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        setIsSearchOpen((prev) => !prev);
+        if (viewMode === "block") {
+          handleSwitchViewMode("code");
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [code, performRender, viewMode, handleSwitchViewMode]);
 
   // 下载当前 build123d Python 源码文件 (.py)
   const handleDownloadPy = () => {
@@ -408,18 +550,16 @@ export default function StudioPage() {
 
   // 代码逆向转换至图形积木
   const handleCodeToBlockly = (currentCode?: string) => {
+    const targetCode = typeof currentCode === "string" && currentCode.trim() ? currentCode : code;
+    setCode(targetCode);
     if (!blocklyWorkspaceRef.current) {
-      showToast("积木工作区未加载，请切换到「双屏」或「积木」视图");
+      handleSwitchViewMode("block");
       return;
     }
-    const targetCode = (typeof currentCode === "string" && currentCode.trim()) ? currentCode : code;
-    setCode(targetCode);
     const res = convertPythonToBlockly(targetCode, blocklyWorkspaceRef.current);
     if (res.success) {
       showToast(`✅ ${res.message}`);
-      if (viewMode === "code") {
-        setViewMode("split");
-      }
+      handleSwitchViewMode("block");
     } else {
       showToast(`⚠️ ${res.message}`);
     }
@@ -452,15 +592,11 @@ export default function StudioPage() {
     setIsSaved(false);
     setCode(codeSnippet);
     performRender(codeSnippet);
-    // 自动切换至双屏联动以查看积木与代码同步
-    if (viewMode === "block") {
-      setViewMode("split");
-    }
     // 尝试同步逆向转换为图形积木
     if (blocklyWorkspaceRef.current) {
       convertPythonToBlockly(codeSnippet, blocklyWorkspaceRef.current);
     }
-    showToast("🤖 AI 代码已注入并自动同步生成积木！");
+    showToast("🤖 AI 代码已注入并自动同步更新积木！");
   };
 
   // 调色板颜色应用 ( 智能材质着色)
@@ -541,37 +677,68 @@ export default function StudioPage() {
 
     const allBlocks = ws.getAllBlocks(false);
 
+    // 将 3D 拾取选择器转换为 build123d 草图附着面
+    const mapSelectorToPlane = (sel: string) => {
+      if (sel === ">Z") return "TOP_FACE";
+      if (sel === "<Z") return "BOTTOM_FACE";
+      if (sel === ">X") return "RIGHT_FACE";
+      if (sel === "<X") return "LEFT_FACE";
+      if (sel === ">Y") return "FRONT_FACE";
+      if (sel === "<Y") return "BACK_FACE";
+      return "TOP_FACE";
+    };
+
     if (type === "face") {
+      const planeVal = mapSelectorToPlane(value || ">Z");
+      const faceExpr =
+        planeVal === "TOP_FACE"
+          ? `${targetPartVar}.faces().sort_by(Axis.Z)[-1]`
+          : planeVal === "BOTTOM_FACE"
+          ? `${targetPartVar}.faces().sort_by(Axis.Z)[0]`
+          : planeVal === "RIGHT_FACE"
+          ? `${targetPartVar}.faces().sort_by(Axis.X)[-1]`
+          : planeVal === "LEFT_FACE"
+          ? `${targetPartVar}.faces().sort_by(Axis.X)[0]`
+          : `${targetPartVar}.faces().sort_by(Axis.Z)[-1]`;
+
+      const applyToBlock = (b: any) => {
+        b.setFieldValue(planeVal, "PLANE");
+        if (b.getField("PARENT_VAR")) b.setFieldValue(targetPartVar, "PARENT_VAR");
+        if (b.getField("FACE_EXPR")) b.setFieldValue(faceExpr, "FACE_EXPR");
+        b.render();
+      };
+
       const selectedBlock: any = Blockly.common?.getSelected?.();
-      if (
-        selectedBlock &&
-        (selectedBlock.type === "cq_sel_face" || selectedBlock.type === "cq_chain_face_select")
-      ) {
-        selectedBlock.setFieldValue(value || ">Z", "SELECTOR");
+      if (selectedBlock && selectedBlock.type === "b3d_build_sketch") {
+        applyToBlock(selectedBlock);
+        showToast(`已将选中草图附着面切换为 [${planeVal}]`);
         return;
       }
-      const faceBlock = allBlocks
+      const sketchBlock = allBlocks
         .slice()
         .reverse()
-        .find((b: any) => b.type === "cq_sel_face" || b.type === "cq_chain_face_select");
+        .find((b: any) => b.type === "b3d_build_sketch");
 
-      if (faceBlock) {
-        faceBlock.setFieldValue(value || ">Z", "SELECTOR");
+      if (sketchBlock) {
+        applyToBlock(sketchBlock);
+        showToast(`已将草图建造者附着面同步为 [${planeVal}]`);
       } else {
-        const newBlock = ws.newBlock("cq_sel_face");
-        newBlock.setFieldValue(value || ">Z", "SELECTOR");
+        const newBlock = ws.newBlock("b3d_build_sketch");
+        applyToBlock(newBlock);
         newBlock.initSvg();
         newBlock.render();
         newBlock.moveTo(new (Blockly as any).utils.Coordinate(100, 180));
+        showToast(`已为表面 [${value || ">Z"}] 创建草图建造者积木`);
       }
     } else if (type === "edge") {
       const filletBlock = allBlocks
         .slice()
         .reverse()
-        .find((b: any) => b.type === "b3d_fillet" || b.type === "cq_op_fillet");
+        .find((b: any) => b.type === "b3d_fillet");
 
       if (filletBlock) {
         filletBlock.setFieldValue(radius || 1.5, "RADIUS");
+        filletBlock.render();
       } else {
         const newBlock = ws.newBlock("b3d_fillet");
         newBlock.setFieldValue(radius || 1.5, "RADIUS");
@@ -676,10 +843,11 @@ export default function StudioPage() {
       {/* 顶部 活力黄主导航工具栏 */}
       <HeaderToolbar
         viewMode={viewMode}
-        onViewModeChange={setViewMode}
+        onViewModeChange={handleSwitchViewMode}
         projectName={projectName}
         onProjectNameChange={setProjectName}
         onSave={handleSave}
+        onLoadSavedProject={handleLoadSavedProject}
         isSaved={isSaved}
         onRun={handleManualRun}
         onExportStl={handleExportStl}
@@ -705,43 +873,16 @@ export default function StudioPage() {
         }
       />
 
-      {/* 主工作区 (根据 viewMode 自适应展示) */}
+      {/* 主工作区 (二态自适应：代码优先 / 积木模式，常驻挂载以保障零延迟与无损切换) */}
       <main className="flex-1 w-full h-[calc(100vh-3.25rem-3.5rem)] relative">
-        {/* 1. 积木模式 (Block Mode: Blockly 60% + 3D 视口 40%) */}
-        {viewMode === "block" && (
-          <PanelGroup direction="horizontal" className="w-full h-full">
-            <Panel defaultSize={60} minSize={30} className="relative h-full">
-              <BlocklyWorkspace
-                onCodeChange={handleBlocklyCodeChange}
-                workspaceRefOut={blocklyWorkspaceRef}
-                colorMode={settings.colorMode}
-              />
-            </Panel>
-            <PanelResizeHandle className="resize-handle" />
-            <Panel defaultSize={40} minSize={25} className="relative h-full">
-              <ThreeCadViewer
-                meshData={meshData}
-                loading={loading}
-                steps={steps}
-                currentStep={currentStep}
-                totalSteps={totalSteps}
-                onStepChange={handleStepChange}
-                onInjectCode={handleInjectCode}
-                onApplyToBlockly={handleApplyToBlockly}
-                onExportStl={handleExportStl}
-                onExportStep={handleExportStep}
-                code={code}
-                onPickChange={handlePickChange}
-                colorMode={settings.colorMode}
-              />
-            </Panel>
-          </PanelGroup>
-        )}
-
-        {/* 2. 代码模式 (Code Mode: Monaco 60% + 3D 视口 40%) */}
-        {viewMode === "code" && (
-          <PanelGroup direction="horizontal" className="w-full h-full">
-            <Panel defaultSize={60} minSize={30} className="relative h-full">
+        <PanelGroup direction="horizontal" className="w-full h-full">
+          {/* 左侧编辑器与积木容器 (60%) */}
+          <Panel defaultSize={60} minSize={30} className="relative h-full overflow-hidden">
+            {/* 1. 代码模式视图 (Monaco) */}
+            <div
+              className={`w-full h-full ${viewMode === "code" ? "block" : "hidden"}`}
+              style={{ display: viewMode === "code" ? "block" : "none" }}
+            >
               <PythonEditor
                 code={code}
                 onChange={handleMonacoCodeChange}
@@ -758,77 +899,43 @@ export default function StudioPage() {
                 colorMode={settings.colorMode}
                 onCodeToBlockly={handleCodeToBlockly}
               />
-            </Panel>
-            <PanelResizeHandle className="resize-handle" />
-            <Panel defaultSize={40} minSize={25} className="relative h-full">
-              <ThreeCadViewer
-                meshData={meshData}
-                loading={loading}
-                steps={steps}
-                currentStep={currentStep}
-                totalSteps={totalSteps}
-                onStepChange={handleStepChange}
-                onInjectCode={handleInjectCode}
-                onApplyToBlockly={handleApplyToBlockly}
-                onExportStl={handleExportStl}
-                onExportStep={handleExportStep}
-                code={code}
-                onPickChange={handlePickChange}
-                colorMode={settings.colorMode}
-              />
-            </Panel>
-          </PanelGroup>
-        )}
+            </div>
 
-        {/* 3. 双屏联动模式 (Split Mode: Blockly 33% + Monaco 33% + 3D 视口 34%) */}
-        {viewMode === "split" && (
-          <PanelGroup direction="horizontal" className="w-full h-full">
-            <Panel defaultSize={33} minSize={20} className="relative h-full">
+            {/* 2. 积木模式视图 (Blockly) */}
+            <div
+              className={`w-full h-full ${viewMode === "block" ? "block" : "hidden"}`}
+              style={{ display: viewMode === "block" ? "block" : "none" }}
+            >
               <BlocklyWorkspace
                 onCodeChange={handleBlocklyCodeChange}
                 workspaceRefOut={blocklyWorkspaceRef}
+                onWorkspaceReady={handleWorkspaceReady}
                 colorMode={settings.colorMode}
               />
-            </Panel>
-            <PanelResizeHandle className="resize-handle" />
-            <Panel defaultSize={33} minSize={20} className="relative h-full">
-              <PythonEditor
-                code={code}
-                onChange={handleMonacoCodeChange}
-                isLocked={isLocked}
-                onToggleLock={handleToggleLock}
-                errorMessage={errorMessage}
-                stdout={stdout}
-                execTime={execTime}
-                isSearchOpen={isSearchOpen}
-                onCloseSearch={() => setIsSearchOpen(false)}
-                isConsoleOpen={isConsoleOpen}
-                onToggleConsole={() => setIsConsoleOpen((prev) => !prev)}
-                indentGuides={settings.indentGuides}
-                colorMode={settings.colorMode}
-                onCodeToBlockly={handleCodeToBlockly}
-              />
-            </Panel>
-            <PanelResizeHandle className="resize-handle" />
-            <Panel defaultSize={34} minSize={20} className="relative h-full">
-              <ThreeCadViewer
-                meshData={meshData}
-                loading={loading}
-                steps={steps}
-                currentStep={currentStep}
-                totalSteps={totalSteps}
-                onStepChange={handleStepChange}
-                onInjectCode={handleInjectCode}
-                onApplyToBlockly={handleApplyToBlockly}
-                onExportStl={handleExportStl}
-                onExportStep={handleExportStep}
-                code={code}
-                onPickChange={handlePickChange}
-                colorMode={settings.colorMode}
-              />
-            </Panel>
-          </PanelGroup>
-        )}
+            </div>
+          </Panel>
+
+          <PanelResizeHandle className="resize-handle" />
+
+          {/* 右侧 3D 视口 (40%) */}
+          <Panel defaultSize={40} minSize={25} className="relative h-full">
+            <ThreeCadViewer
+              meshData={meshData}
+              loading={loading}
+              steps={steps}
+              currentStep={currentStep}
+              totalSteps={totalSteps}
+              onStepChange={handleStepChange}
+              onInjectCode={handleInjectCode}
+              onApplyToBlockly={handleApplyToBlockly}
+              onExportStl={handleExportStl}
+              onExportStep={handleExportStep}
+              code={code}
+              onPickChange={handlePickChange}
+              colorMode={settings.colorMode}
+            />
+          </Panel>
+        </PanelGroup>
       </main>
 
       {/*  底部常驻 Dock 栏与大尺寸运行按钮 */}
@@ -937,11 +1044,11 @@ export default function StudioPage() {
             pickedFace={pickedData.face}
             pickedEdge={pickedData.edge}
             pickedVertex={pickedData.vertex}
-            targetVar="part"
+            targetVar={targetPartVar}
             themeToken={themeToken}
             onInjectCode={handleInjectCode}
             onApplyToBlockly={handleApplyToBlockly}
-            showToast={(msg) => console.log(msg)}
+            showToast={showToast}
             colorMode={settings.colorMode}
           />
 
@@ -991,7 +1098,7 @@ export default function StudioPage() {
           onClick={() => {
             setIsSearchOpen((prev) => !prev);
             if (viewMode === "block") {
-              setViewMode("split");
+              handleSwitchViewMode("code");
             }
           }}
           title="查找与替换代码 (Ctrl + F)"

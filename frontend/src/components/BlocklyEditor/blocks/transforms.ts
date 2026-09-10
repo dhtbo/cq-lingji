@@ -142,17 +142,17 @@ export function registerTransformBlocks() {
       this.appendDummyInput()
         .appendField("📍 空间定位 Locations")
         .appendField("X:")
-        .appendField(new Blockly.FieldNumber(0), "X")
+        .appendField(new Blockly.FieldTextInput("0"), "X")
         .appendField("Y:")
-        .appendField(new Blockly.FieldNumber(0), "Y")
+        .appendField(new Blockly.FieldTextInput("0"), "Y")
         .appendField("Z:")
-        .appendField(new Blockly.FieldNumber(0), "Z");
+        .appendField(new Blockly.FieldTextInput("0"), "Z");
       this.appendStatementInput("DO")
         .appendField("在此位置放置:");
       this.setPreviousStatement(true, null);
       this.setNextStatement(true, null);
       this.setColour(CATEGORY_COLORS.TRANSFORM);
-      this.setTooltip("build123d Locations：指定内部图元或实体的放置空间坐标");
+      this.setTooltip("build123d Locations：指定内部图元或实体的放置空间坐标，支持数值或变量名");
     },
   };
 
@@ -162,19 +162,19 @@ export function registerTransformBlocks() {
       this.appendDummyInput()
         .appendField("▦ 矩形网格阵列 GridLocations")
         .appendField("X间距:")
-        .appendField(new Blockly.FieldNumber(15, 0.1), "X_SPACING")
+        .appendField(new Blockly.FieldTextInput("15"), "X_SPACING")
         .appendField("Y间距:")
-        .appendField(new Blockly.FieldNumber(15, 0.1), "Y_SPACING")
+        .appendField(new Blockly.FieldTextInput("15"), "Y_SPACING")
         .appendField("X数量:")
-        .appendField(new Blockly.FieldNumber(3, 1, 50, 1), "X_COUNT")
+        .appendField(new Blockly.FieldTextInput("3"), "X_COUNT")
         .appendField("Y数量:")
-        .appendField(new Blockly.FieldNumber(3, 1, 50, 1), "Y_COUNT");
+        .appendField(new Blockly.FieldTextInput("3"), "Y_COUNT");
       this.appendStatementInput("DO")
         .appendField("阵列实体/孔:");
       this.setPreviousStatement(true, null);
       this.setNextStatement(true, null);
       this.setColour(CATEGORY_COLORS.TRANSFORM);
-      this.setTooltip("build123d GridLocations：在矩形网格点上批量阵列生成内部特征");
+      this.setTooltip("build123d GridLocations：在矩形网格点上批量阵列生成内部特征，支持数值、变量名或表达式");
     },
   };
 
@@ -184,15 +184,15 @@ export function registerTransformBlocks() {
       this.appendDummyInput()
         .appendField("⭕ 环形极坐标阵列 PolarLocations")
         .appendField("分布半径 R:")
-        .appendField(new Blockly.FieldNumber(20, 0.1), "RADIUS")
+        .appendField(new Blockly.FieldTextInput("20"), "RADIUS")
         .appendField("数量:")
-        .appendField(new Blockly.FieldNumber(6, 1, 100, 1), "COUNT");
+        .appendField(new Blockly.FieldTextInput("6"), "COUNT");
       this.appendStatementInput("DO")
         .appendField("周向阵列:");
       this.setPreviousStatement(true, null);
       this.setNextStatement(true, null);
       this.setColour(CATEGORY_COLORS.TRANSFORM);
-      this.setTooltip("build123d PolarLocations：围绕圆心周向均布阵列内部特征（如环形螺栓孔）");
+      this.setTooltip("build123d PolarLocations：围绕圆心周向均布阵列内部特征（如环形螺栓孔），支持数值或变量名");
     },
   };
 
@@ -202,17 +202,17 @@ export function registerTransformBlocks() {
       this.appendDummyInput()
         .appendField("🐝 蜂窝六边形阵列 HexLocations")
         .appendField("边心距:")
-        .appendField(new Blockly.FieldNumber(10, 0.1), "APOTHEM")
+        .appendField(new Blockly.FieldTextInput("10"), "APOTHEM")
         .appendField("X数量:")
-        .appendField(new Blockly.FieldNumber(3, 1, 20, 1), "X_COUNT")
+        .appendField(new Blockly.FieldTextInput("3"), "X_COUNT")
         .appendField("Y数量:")
-        .appendField(new Blockly.FieldNumber(3, 1, 20, 1), "Y_COUNT");
+        .appendField(new Blockly.FieldTextInput("3"), "Y_COUNT");
       this.appendStatementInput("DO")
         .appendField("蜂窝阵列:");
       this.setPreviousStatement(true, null);
       this.setNextStatement(true, null);
       this.setColour(CATEGORY_COLORS.TRANSFORM);
-      this.setTooltip("build123d HexLocations：蜂窝六边形紧密排列阵列");
+      this.setTooltip("build123d HexLocations：蜂窝六边形紧密排列阵列，支持数值或变量名");
     },
   };
 }

@@ -404,21 +404,90 @@ def execute_cq_sandboxed(
     # 辅助：将 build123d / CadQuery 各种包装类型统一提取为几何实体
     def _unwrap_geo(val: Any) -> Any:
         if isinstance(val, b3d.BuildPart):
-            return val.part
+            try:
+                res = val.part
+            except Exception:
+                res = None
+            if res is None:
+                # 兼容未执行 3D 特征操作（如 extrude）仅含草图/路径的 BuildPart
+                try:
+                    if hasattr(val, "pending_faces") and val.pending_faces:
+                        res = val.pending_faces[0] if len(val.pending_faces) == 1 else b3d.Compound(children=val.pending_faces)
+                    elif hasattr(val, "pending_edges") and val.pending_edges:
+                        res = val.pending_edges[0] if len(val.pending_edges) == 1 else b3d.Compound(children=val.pending_edges)
+                except Exception:
+                    pass
+            if hasattr(val, "color") and val.color is not None and res is not None:
+                try:
+                    res.color = val.color
+                except Exception:
+                    pass
+            return res
+
         if isinstance(val, b3d.BuildSketch):
-            return val.sketch
+            try:
+                res = val.sketch
+            except Exception:
+                res = None
+            if res is None:
+                try:
+                    if hasattr(val, "faces") and callable(val.faces):
+                        faces = val.faces()
+                        if faces:
+                            res = faces[0] if len(faces) == 1 else b3d.Compound(children=faces)
+                except Exception:
+                    pass
+                if res is None and hasattr(val, "pending_edges") and val.pending_edges:
+                    try:
+                        res = val.pending_edges[0] if len(val.pending_edges) == 1 else b3d.Compound(children=val.pending_edges)
+                    except Exception:
+                        pass
+            if hasattr(val, "color") and val.color is not None and res is not None:
+                try:
+                    res.color = val.color
+                except Exception:
+                    pass
+            return res
+
         if isinstance(val, b3d.BuildLine):
-            return val.line
+            try:
+                res = val.line
+            except Exception:
+                res = None
+            if hasattr(val, "color") and val.color is not None and res is not None:
+                try:
+                    res.color = val.color
+                except Exception:
+                    pass
+            return res
+
         return val
 
     def _is_geo_obj(val: Any) -> bool:
-        if isinstance(val, (b3d.BuildPart, b3d.BuildSketch, b3d.BuildLine)):
-            return True
-        if isinstance(val, (b3d.Part, b3d.Solid, b3d.Compound, b3d.Sketch, b3d.Curve, b3d.Wire, b3d.Face, b3d.Shape)):
+        if isinstance(val, b3d.BuildPart):
+            try:
+                if val.part is not None:
+                    return True
+            except Exception:
+                pass
+            return bool(getattr(val, "pending_faces", None)) or bool(getattr(val, "pending_edges", None))
+        if isinstance(val, b3d.BuildSketch):
+            try:
+                if val.sketch is not None:
+                    return True
+            except Exception:
+                pass
+            return bool(getattr(val, "pending_edges", None)) or (hasattr(val, "faces") and bool(val.faces()))
+        if isinstance(val, b3d.BuildLine):
+            try:
+                return val.line is not None
+            except Exception:
+                return False
+        if isinstance(val, (b3d.Part, b3d.Solid, b3d.Compound, b3d.Sketch, b3d.Curve, b3d.Wire, b3d.Face, b3d.Edge, b3d.Shape)):
             return True
         if hasattr(val, "wrapped") and "TopoDS" in type(getattr(val, "wrapped")).__name__:
             return True
-        if isinstance(val, (cq.Workplane, cq.Shape, cq.Assembly)):
+        if cq is not None and isinstance(val, (cq.Workplane, cq.Shape, cq.Assembly)):
             return True
         return False
 
@@ -467,7 +536,10 @@ def execute_cq_sandboxed(
                 return assy, steps, actual_step, captured_stdout
             else:
                 children = [_unwrap_geo(item["shape"]) for item in cq_objects.values()]
-                compound = b3d.Compound(children=children)
+                valid_children = [c for c in children if c is not None]
+                if len(valid_children) == 1:
+                    return valid_children[0], steps, actual_step, captured_stdout
+                compound = b3d.Compound(children=valid_children)
                 return compound, steps, actual_step, captured_stdout
 
     # 优先级 2: 变量名明确为 part, result, 或 model
@@ -477,10 +549,11 @@ def execute_cq_sandboxed(
             val = local_vars[name]
             if _is_geo_obj(val):
                 geo = _unwrap_geo(val)
-                # 检查是否为 CadQuery Workplane 多图层合成
-                if cq is not None and isinstance(geo, cq.Workplane):
-                    geo = _compose_multi_layer_cad_object(geo)
-                return geo, steps, actual_step, captured_stdout
+                if geo is not None:
+                    # 检查是否为 CadQuery Workplane 多图层合成
+                    if cq is not None and isinstance(geo, cq.Workplane):
+                        geo = _compose_multi_layer_cad_object(geo)
+                    return geo, steps, actual_step, captured_stdout
 
     # 优先级 3: 扫描局部变量字典中的几何实体
     found_parts = []
@@ -488,33 +561,109 @@ def execute_cq_sandboxed(
     for var_name, val in local_vars.items():
         if _is_geo_obj(val):
             unwrapped = _unwrap_geo(val)
-            if isinstance(unwrapped, (b3d.Sketch, b3d.Curve, b3d.Wire, b3d.Face)):
-                found_sketches.append((var_name, unwrapped))
+            if unwrapped is None:
+                continue
+
+            # 判断是否为真正具有 3D 实体的 Part / Solid
+            is_3d = False
+            if isinstance(unwrapped, (b3d.Part, b3d.Solid)):
+                is_3d = True
+            elif isinstance(unwrapped, b3d.Compound):
+                children = getattr(unwrapped, "children", [])
+                if any(isinstance(c, (b3d.Solid, b3d.Part)) for c in children):
+                    is_3d = True
+            elif cq is not None and isinstance(unwrapped, (cq.Solid, cq.Workplane)):
+                is_3d = True
+
+            if is_3d:
+                found_parts.append((var_name, unwrapped, val))
             else:
-                found_parts.append((var_name, unwrapped))
+                found_sketches.append((var_name, unwrapped, val))
 
     if found_parts:
         # 如果同时存在 3D 实体与正在绘制的草图，组合在装配体/复合体中一起展示
         if found_sketches:
             if cq is not None:
                 assy = cq.Assembly()
-                for name, p_item in found_parts:
-                    assy.add(p_item, name=name, color=cq.Color("#3b82f6"))
-                for name, s_item in found_sketches:
-                    assy.add(s_item, name=f"sketch_{name}", color=cq.Color("#f59e0b"))
+                for name, p_item, _ in found_parts:
+                    if p_item is not None:
+                        assy.add(p_item, name=name, color=cq.Color("#3b82f6"))
+                for name, s_item, _ in found_sketches:
+                    if s_item is not None:
+                        assy.add(s_item, name=f"sketch_{name}", color=cq.Color("#f59e0b"))
                 return assy, steps, actual_step, captured_stdout
             else:
-                all_children = [p for _, p in found_parts] + [s for _, s in found_sketches]
-                return b3d.Compound(children=all_children), steps, actual_step, captured_stdout
-        target_name, target_geo = found_parts[-1]
+                valid_children = [p for _, p, _ in found_parts if p is not None] + [s for _, s, _ in found_sketches if s is not None]
+                if len(valid_children) == 1:
+                    return valid_children[0], steps, actual_step, captured_stdout
+                return b3d.Compound(children=valid_children), steps, actual_step, captured_stdout
+
+        if len(found_parts) > 1:
+            if cq is not None:
+                assy = cq.Assembly()
+                for name, p_item, _ in found_parts:
+                    if p_item is not None:
+                        assy.add(p_item, name=name)
+                return assy, steps, actual_step, captured_stdout
+            else:
+                valid_parts = [p for _, p, _ in found_parts if p is not None]
+                if len(valid_parts) == 1:
+                    return valid_parts[0], steps, actual_step, captured_stdout
+                return b3d.Compound(children=valid_parts), steps, actual_step, captured_stdout
+
+        target_name, target_geo, _ = found_parts[-1]
         logger.info(f"在局部变量 '{target_name}' 中找到 3D 几何实体")
         if cq is not None and isinstance(target_geo, cq.Workplane):
             target_geo = _compose_multi_layer_cad_object(target_geo)
         return target_geo, steps, actual_step, captured_stdout
 
     if found_sketches:
-        # 仅有草图时直接返回草图
-        target_name, target_sketch = found_sketches[-1]
+        # 仅有草图/曲线时：
+        # 1. 优先提取 2D 草图表面 (Sketch 或 Face)
+        sketch_candidates = [
+            (name, unwrapped, orig) for name, unwrapped, orig in found_sketches
+            if isinstance(unwrapped, (b3d.Sketch, b3d.Face))
+        ]
+        if sketch_candidates:
+            # 优先选择专门的 BuildSketch，避免包含来自父容器 BuildPart 继承的重复 pending_faces
+            dedicated_sketches = [
+                (name, unwrapped) for name, unwrapped, orig in sketch_candidates
+                if isinstance(orig, b3d.BuildSketch) or not isinstance(orig, b3d.BuildPart)
+            ]
+            if dedicated_sketches:
+                if len(dedicated_sketches) == 1:
+                    target_name, target_sketch = dedicated_sketches[0]
+                    logger.info(f"在局部变量 '{target_name}' 中找到 2D 草图实体")
+                    return target_sketch, steps, actual_step, captured_stdout
+                else:
+                    children = [s for _, s in dedicated_sketches if s is not None]
+                    if len(children) == 1:
+                        return children[0], steps, actual_step, captured_stdout
+                    return b3d.Compound(children=children), steps, actual_step, captured_stdout
+
+            # 如果只有 BuildPart 的 pending_faces (例如未给 BuildSketch 命名的上下文)
+            target_name, target_sketch, _ = sketch_candidates[-1]
+            logger.info(f"在局部变量 '{target_name}' 中找到草图面")
+            return target_sketch, steps, actual_step, captured_stdout
+
+        # 2. 若无 2D 面，提取 1D 曲线/线框 (BuildLine, Curve, Wire, Edge)
+        curve_candidates = [
+            (name, unwrapped) for name, unwrapped, orig in found_sketches
+            if isinstance(unwrapped, (b3d.Curve, b3d.Wire, b3d.Edge))
+        ]
+        if curve_candidates:
+            if len(curve_candidates) == 1:
+                target_name, target_curve = curve_candidates[0]
+                logger.info(f"在局部变量 '{target_name}' 中找到 1D 曲线实体")
+                return target_curve, steps, actual_step, captured_stdout
+            else:
+                children = [c for _, c in curve_candidates if c is not None]
+                if len(children) == 1:
+                    return children[0], steps, actual_step, captured_stdout
+                return b3d.Compound(children=children), steps, actual_step, captured_stdout
+
+        # 3. 兜底返回最后一个有效草图
+        target_name, target_sketch, _ = found_sketches[-1]
         logger.info(f"在局部变量 '{target_name}' 中找到草图实体")
         return target_sketch, steps, actual_step, captured_stdout
 

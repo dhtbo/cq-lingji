@@ -21,6 +21,7 @@ import {
   FileCode,
   FileUp,
   FileDown,
+  FolderOpen,
 } from "lucide-react";
 import { CAD_TEMPLATES, CadTemplate } from "../Templates/cadTemplates";
 import { HelpModal } from "./HelpModal";
@@ -30,7 +31,7 @@ import {
   ThemeColorOption,
 } from "../EditorSettings/EditorSettingsModal";
 
-export type ViewMode = "block" | "code" | "split";
+export type ViewMode = "code" | "block";
 
 interface HeaderToolbarProps {
   viewMode: ViewMode;
@@ -38,6 +39,7 @@ interface HeaderToolbarProps {
   projectName: string;
   onProjectNameChange: (name: string) => void;
   onSave: () => void;
+  onLoadSavedProject?: () => void;
   isSaved?: boolean;
   onRun: () => void;
   onExportStl: () => void;
@@ -63,6 +65,7 @@ export const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
   projectName,
   onProjectNameChange,
   onSave,
+  onLoadSavedProject,
   isSaved = true,
   onRun,
   onExportStl,
@@ -194,6 +197,21 @@ export const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
                   </span>
                   <span className="text-[10px] text-gray-400">Ctrl+S</span>
                 </button>
+                {onLoadSavedProject && (
+                  <button
+                    onClick={() => {
+                      onLoadSavedProject();
+                      setShowFileMenu(false);
+                    }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-amber-50 hover:text-amber-700 flex items-center justify-between"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <FolderOpen size={13} className="text-amber-600" />
+                      <span>从本地暂存载入工程</span>
+                    </span>
+                    <span className="text-[10px] bg-amber-100 text-amber-800 px-1 rounded font-mono">Load</span>
+                  </button>
+                )}
                 {onDownloadPy && (
                   <button
                     onClick={() => {
@@ -412,36 +430,27 @@ export const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
           {/* 右侧垂直分隔条 */}
           <div className={`h-4 w-[1.5px] ${dividerColor} mx-1`} />
 
-          {/* 代码/积木切换器 (居左紧邻菜单) */}
+          {/* 代码/积木切换器 (二态模式：代码优先，可一键切换积木) */}
           <div
             className={`flex items-center rounded-lg p-0.5 ${switchContainerBg} shadow-inner transition-colors duration-200`}
           >
             <button
-              onClick={() => onViewModeChange("block")}
-              className={`flex items-center space-x-1 px-2 py-0.5 rounded-md font-bold text-xs transition active:scale-95 ${viewMode === "block" ? switchActiveBg : switchInactiveText
-                }`}
-              title="纯积木模式 (3D 辅屏)"
-            >
-              <Blocks size={13} className="stroke-[2.4]" />
-              <span>积木</span>
-            </button>
-            <button
-              onClick={() => onViewModeChange("split")}
-              className={`flex items-center space-x-1 px-2 py-0.5 rounded-md font-bold text-xs transition active:scale-95 ${viewMode === "split" ? switchActiveBg : switchInactiveText
-                }`}
-              title="双屏联动模式 (积木 + Python + 3D)"
-            >
-              <Columns3 size={13} className="stroke-[2.4]" />
-              <span>双屏</span>
-            </button>
-            <button
               onClick={() => onViewModeChange("code")}
-              className={`flex items-center space-x-1 px-2 py-0.5 rounded-md font-bold text-xs transition active:scale-95 ${viewMode === "code" ? switchActiveBg : switchInactiveText
+              className={`flex items-center space-x-1 px-2.5 py-0.5 rounded-md font-bold text-xs transition active:scale-95 ${viewMode === "code" ? switchActiveBg : switchInactiveText
                 }`}
               title="纯代码模式 (Python + 3D)"
             >
               <Code2 size={13} className="stroke-[2.4]" />
               <span>代码</span>
+            </button>
+            <button
+              onClick={() => onViewModeChange("block")}
+              className={`flex items-center space-x-1 px-2.5 py-0.5 rounded-md font-bold text-xs transition active:scale-95 ${viewMode === "block" ? switchActiveBg : switchInactiveText
+                }`}
+              title="图形积木模式 (Blockly + 3D)"
+            >
+              <Blocks size={13} className="stroke-[2.4]" />
+              <span>积木</span>
             </button>
           </div>
         </div>

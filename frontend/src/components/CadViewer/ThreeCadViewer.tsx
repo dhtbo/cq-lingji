@@ -87,9 +87,11 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const displayRef = useRef<any>(null);
 
-  // 智能推断主 CAD 实体变量名 (如 flange, bushing, part)
+  // 智能推断主 CAD 实体变量名 (如 example, flange, part)
   const targetVar = useMemo(() => {
     if (!code) return "part";
+    const buildPartMatch = code.match(/with\s+BuildPart\s*\(.*?\)\s*as\s+([a-zA-Z_]\w*)/i);
+    if (buildPartMatch && buildPartMatch[1]) return buildPartMatch[1];
     const showMatch = code.match(/show_object\s*\(\s*([a-zA-Z_]\w*)/);
     if (showMatch && showMatch[1]) return showMatch[1];
     const assignMatches = Array.from(code.matchAll(/^([a-zA-Z_]\w*)\s*=/gm));
@@ -98,6 +100,19 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
     }
     return "part";
   }, [code]);
+
+  // 根据面方位选择器生成精确的 build123d 实体拓扑面代码表达式
+  const getFaceExpr = (selector: string, varName: string = targetVar) => {
+    if (selector === ">Z") return `${varName}.faces().sort_by(Axis.Z)[-1]`;
+    if (selector === "<Z") return `${varName}.faces().sort_by(Axis.Z)[0]`;
+    if (selector === ">X") return `${varName}.faces().sort_by(Axis.X)[-1]`;
+    if (selector === "<X") return `${varName}.faces().sort_by(Axis.X)[0]`;
+    if (selector === ">Y") return `${varName}.faces().sort_by(Axis.Y)[-1]`;
+    if (selector === "<Y") return `${varName}.faces().sort_by(Axis.Y)[0]`;
+    if (selector === "|Z") return `${varName}.faces().filter_by(Axis.Z)`;
+    return `${varName}.faces().sort_by(Axis.Z)[-1]`;
+  };
+
   const [theme, setTheme] = useState<"dark" | "light">(colorMode);
 
   // 监听父级 colorMode 变化并同步更新 3D 视口渲染引擎底色
@@ -404,20 +419,28 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
   const handleSketchPointerUp = () => {
     if (activeTool !== "sketch" || !isSketchDrawing || !sketchStart || !sketchCurrent) return;
 
+    const faceExpr = getFaceExpr(pickedData.face.selector);
+
     if (sketchShape === "circle") {
       const radius = Math.round(sketchStart.distanceTo(sketchCurrent) * 10) / 10;
       if (radius >= 1.0) {
-        const codeSnippet = `${targetVar} = ${targetVar}.circle(${radius})\n`;
+        const codeSnippet = isInSketchStack
+          ? `        Circle(radius=${radius})\n`
+          : `    with BuildSketch(${faceExpr}):\n        Circle(radius=${radius})\n`;
         onInjectCode?.(codeSnippet);
-        showToast(`✅ 已在基准面绘制 R=${radius}mm 圆形草图`);
+        onApplyToBlockly?.("face", pickedData.face.selector);
+        showToast(`✅ 已在 [${pickedData.face.name || pickedData.face.selector}] 绘制 R=${radius}mm 圆形草图`);
       }
     } else if (sketchShape === "rect") {
       const w = Math.round(Math.abs(sketchCurrent.x - sketchStart.x) * 10) / 10;
       const h = Math.round(Math.abs(sketchCurrent.y - sketchStart.y) * 10) / 10;
       if (w >= 1.0 && h >= 1.0) {
-        const codeSnippet = `${targetVar} = ${targetVar}.rect(${w}, ${h})\n`;
+        const codeSnippet = isInSketchStack
+          ? `        Rectangle(${w}, ${h})\n`
+          : `    with BuildSketch(${faceExpr}):\n        Rectangle(${w}, ${h})\n`;
         onInjectCode?.(codeSnippet);
-        showToast(`✅ 已在基准面绘制 ${w}×${h}mm 矩形草图`);
+        onApplyToBlockly?.("face", pickedData.face.selector);
+        showToast(`✅ 已在 [${pickedData.face.name || pickedData.face.selector}] 绘制 ${w}×${h}mm 矩形草图`);
       }
     }
 
@@ -434,9 +457,13 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
     const ptsStr = polygonPoints
       .map((p) => `(${Math.round(p.x * 10) / 10}, ${Math.round(p.y * 10) / 10})`)
       .join(", ");
-    const codeSnippet = `${targetVar} = ${targetVar}.polyline([${ptsStr}]).close()\n`;
+    const faceExpr = getFaceExpr(pickedData.face.selector);
+    const codeSnippet = isInSketchStack
+      ? `        Polyline([${ptsStr}], close=True)\n`
+      : `    with BuildSketch(${faceExpr}):\n        Polyline([${ptsStr}], close=True)\n`;
     onInjectCode?.(codeSnippet);
-    showToast(`✅ 已在基准面生成 ${polygonPoints.length} 顶点多边形闭合草图`);
+    onApplyToBlockly?.("face", pickedData.face.selector);
+    showToast(`✅ 已在 [${pickedData.face.name || pickedData.face.selector}] 生成 ${polygonPoints.length} 顶点多边形闭合草图`);
     setPolygonPoints([]);
     setSketchCurrent(null);
   };
@@ -577,10 +604,10 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
         e.preventDefault();
         if (pickTabRef.current === "face") {
-          onInjectCode?.(`${targetVar} = ${targetVar}.faces("${pickedData.face.selector}").edges("%Circle").fillet(${quickRadius})\n`);
+          onInjectCode?.(`    fillet(${targetVar}.faces().sort_by(Axis.Z)[-1].edges().filter_by(GeomType.CIRCLE), radius=${quickRadius})\n`);
           triggerCopyToast("bore-fillet", `已孔口倒圆角 (${quickRadius}mm)`);
         } else {
-          onInjectCode?.(`${targetVar} = ${targetVar}.edges("${pickedData.edge.selector}").fillet(${quickRadius})\n`);
+          onInjectCode?.(`    fillet(${targetVar}.edges().filter_by(Axis.Z), radius=${quickRadius})\n`);
           triggerCopyToast("fillet", `已倒圆角 (${quickRadius}mm)`);
         }
         return;
@@ -589,7 +616,7 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
       // 4. E / e: 拉伸成体 (Extrude)
       if (e.key.toLowerCase() === "e" && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
-        onInjectCode?.(`${targetVar} = ${targetVar}.faces("${pickedData.face.selector}").workplane().circle(10).extrude(10)\n`);
+        onInjectCode?.(`    with BuildSketch(${targetVar}.faces().sort_by(Axis.Z)[-1]):\n        Circle(radius=10)\n    extrude(amount=10)\n`);
         triggerCopyToast("extrude", "已执行表面拉伸 (10mm)");
         return;
       }
@@ -597,8 +624,8 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
       // 5. I / i: 表面打孔 (Inset / Hole)
       if (e.key.toLowerCase() === "i" && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
-        onInjectCode?.(`${targetVar} = ${targetVar}.faces("${pickedData.face.selector}").hole(diameter=5, depth=10)\n`);
-        triggerCopyToast("hole", "已执行打孔 hole(d=5, depth=10)");
+        onInjectCode?.(`    with Locations(${targetVar}.faces().sort_by(Axis.Z)[-1]):\n        Hole(radius=2.5, depth=10)\n`);
+        triggerCopyToast("hole", "已执行打孔 (d=5mm, depth=10mm)");
         return;
       }
 
@@ -937,7 +964,7 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
   // 1. 添加立方体
   const handleCreateBox = () => {
     const { length, width, height } = boxParams;
-    onInjectCode?.(`part = cq.Workplane("XY").box(${length}, ${width}, ${height})\n`);
+    onInjectCode?.(`    Box(${length}, ${width}, ${height})\n`);
     onApplyToBlockly?.("box", undefined, undefined, undefined, { length, width, height });
     triggerCopyToast("box", `已创建立方体 (${length}x${width}x${height})`);
     setIsAddMenuOpen(false);
@@ -946,7 +973,7 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
   // 2. 添加圆柱体
   const handleCreateCylinder = () => {
     const { height, radius } = cylParams;
-    onInjectCode?.(`part = cq.Workplane("XY").cylinder(${height}, ${radius})\n`);
+    onInjectCode?.(`    Cylinder(radius=${radius}, height=${height})\n`);
     onApplyToBlockly?.("cylinder", undefined, undefined, undefined, { height, radius });
     triggerCopyToast("cylinder", `已创建圆柱体 (h=${height}, r=${radius})`);
     setIsAddMenuOpen(false);
@@ -955,7 +982,7 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
   // 3. 添加球体
   const handleCreateSphere = () => {
     const { radius } = sphParams;
-    onInjectCode?.(`part = cq.Workplane("XY").sphere(${radius})\n`);
+    onInjectCode?.(`    Sphere(radius=${radius})\n`);
     onApplyToBlockly?.("sphere", undefined, undefined, undefined, { radius });
     triggerCopyToast("sphere", `已创建球体 (r=${radius})`);
     setIsAddMenuOpen(false);
@@ -964,7 +991,7 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
   // 4. 添加圆锥台
   const handleCreateCone = () => {
     const { height, bottomR, topR } = coneParams;
-    onInjectCode?.(`part = cq.Workplane("XY").cone(${height}, ${bottomR}, ${topR})\n`);
+    onInjectCode?.(`    Cone(bottom_radius=${bottomR}, top_radius=${topR}, height=${height})\n`);
     triggerCopyToast("cone", `已创建圆锥台 (h=${height}, r1=${bottomR}, r2=${topR})`);
     setIsAddMenuOpen(false);
   };
@@ -972,7 +999,7 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
   // 5. 添加矩形草图并拉伸
   const handleCreateSketchRect = () => {
     const { width, height, extrude } = sketchRectParams;
-    onInjectCode?.(`part = cq.Workplane("XY").rect(${width}, ${height}).extrude(${extrude})\n`);
+    onInjectCode?.(`    with BuildSketch():\n        Rectangle(${width}, ${height})\n    extrude(amount=${extrude})\n`);
     onApplyToBlockly?.("extrude", undefined, undefined, undefined, { distance: extrude });
     triggerCopyToast("sketch-rect", `已拉伸矩形草图 (${width}x${height} -> ${extrude}mm)`);
     setIsAddMenuOpen(false);
@@ -981,7 +1008,7 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
   // 6. 添加圆形草图并拉伸
   const handleCreateSketchCircle = () => {
     const { radius, extrude } = sketchCircleParams;
-    onInjectCode?.(`part = cq.Workplane("XY").circle(${radius}).extrude(${extrude})\n`);
+    onInjectCode?.(`    with BuildSketch():\n        Circle(radius=${radius})\n    extrude(amount=${extrude})\n`);
     onApplyToBlockly?.("extrude", undefined, undefined, undefined, { distance: extrude });
     triggerCopyToast("sketch-circle", `已拉伸圆形草图 (r=${radius} -> ${extrude}mm)`);
     setIsAddMenuOpen(false);
@@ -990,7 +1017,7 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
   // 7. 添加机械法兰盘
   const handleCreateFlange = () => {
     const { outerR, centerD, thickness } = flangeParams;
-    onInjectCode?.(`part = cq.Workplane("XY").circle(${outerR}).extrude(${thickness}).faces(">Z").hole(${centerD}, ${thickness})\n`);
+    onInjectCode?.(`    Cylinder(radius=${outerR}, height=${thickness})\n    Hole(radius=${centerD / 2}, depth=${thickness})\n`);
     onApplyToBlockly?.("flange", undefined, undefined, undefined, { outerR, centerD, thickness });
     triggerCopyToast("flange", `已创建机械法兰盘 (R=${outerR}, 孔=${centerD})`);
     setIsAddMenuOpen(false);
@@ -999,7 +1026,7 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
   // 8. 添加衬套 / 轴套
   const handleCreateBushing = () => {
     const { outerR, holeD, height } = bushingParams;
-    onInjectCode?.(`part = cq.Workplane("XY").circle(${outerR}).extrude(${height}).faces(">Z").hole(${holeD}, ${height})\n`);
+    onInjectCode?.(`    Cylinder(radius=${outerR}, height=${height})\n    Hole(radius=${holeD / 2}, depth=${height})\n`);
     triggerCopyToast("bushing", `已创建机械衬套轴套 (R=${outerR}, 内径=${holeD})`);
     setIsAddMenuOpen(false);
   };
@@ -1007,7 +1034,7 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
   // 9. 添加空心管件
   const handleCreatePipe = () => {
     const { outerR, innerR, height } = pipeParams;
-    onInjectCode?.(`part = cq.Workplane("XY").circle(${outerR}).circle(${innerR}).extrude(${height})\n`);
+    onInjectCode?.(`    Cylinder(radius=${outerR}, height=${height})\n    Hole(radius=${innerR}, depth=${height})\n`);
     triggerCopyToast("pipe", `已创建空心管件 (外R=${outerR}, 内R=${innerR})`);
     setIsAddMenuOpen(false);
   };
@@ -1071,7 +1098,7 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
       shortcut: "Ctrl + B",
       icon: Sparkles,
       action: () => {
-        onInjectCode?.(`part = part.edges("${pickedData.edge.selector}").fillet(${quickRadius})\n`);
+        onInjectCode?.(`    fillet(${targetVar}.edges().filter_by(Axis.Z), radius=${quickRadius})\n`);
         onApplyToBlockly?.("edge", pickedData.edge.selector, undefined, quickRadius);
         triggerCopyToast("fillet", `已倒圆角 (${quickRadius}mm)`);
       },
@@ -1083,7 +1110,7 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
       shortcut: "🔘",
       icon: Sparkles,
       action: () => {
-        onInjectCode?.(`part = part.faces("${pickedData.face.selector}").edges("%Circle").fillet(${quickRadius})\n`);
+        onInjectCode?.(`    fillet(${targetVar}.faces().sort_by(Axis.Z)[-1].edges().filter_by(GeomType.CIRCLE), radius=${quickRadius})\n`);
         onApplyToBlockly?.("edge", "faces_Z_circle", undefined, quickRadius);
         triggerCopyToast("bore-fillet", `已注入内孔口倒圆角 (${quickRadius}mm)`);
       },
@@ -1095,7 +1122,7 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
       shortcut: "📐",
       icon: Slash,
       action: () => {
-        onInjectCode?.(`part = part.edges("${pickedData.edge.selector}").chamfer(${quickRadius})\n`);
+        onInjectCode?.(`    chamfer(${targetVar}.faces().sort_by(Axis.Z)[-1].edges(), length=${quickRadius})\n`);
         onApplyToBlockly?.("edge", pickedData.edge.selector, undefined, quickRadius);
         triggerCopyToast("chamfer", `已倒斜角 (${quickRadius}mm)`);
       },
@@ -1108,7 +1135,7 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
       icon: ArrowUpSquare,
       action: () => {
         onInjectCode?.(
-          `part = part.faces("${pickedData.face.selector}").workplane().circle(10).extrude(10)\n`
+          `    with BuildSketch(${targetVar}.faces().sort_by(Axis.Z)[-1]):\n        Circle(radius=10)\n    extrude(amount=10)\n`
         );
         onApplyToBlockly?.("extrude", undefined, undefined, undefined, { distance: 10 });
         triggerCopyToast("extrude", "已执行表面拉伸 (10mm)");
@@ -1121,7 +1148,7 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
       shortcut: "I",
       icon: CircleDot,
       action: () => {
-        onInjectCode?.(`part = part.faces("${pickedData.face.selector}").hole(diameter=5, depth=10)\n`);
+        onInjectCode?.(`    with Locations(${targetVar}.faces().sort_by(Axis.Z)[-1]):\n        Hole(radius=2.5, depth=10)\n`);
         onApplyToBlockly?.("hole", undefined, undefined, undefined, { diameter: 5, depth: 10 });
         triggerCopyToast("hole", "已在表面打孔 (d=5mm, depth=10mm)");
       },
@@ -1133,20 +1160,21 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
       shortcut: "🐚",
       icon: Minimize2,
       action: () => {
-        onInjectCode?.(`part = part.faces("${pickedData.face.selector}").shell(-2)\n`);
+        onInjectCode?.(`    offset(amount=-2, openings=${targetVar}.faces().sort_by(Axis.Z)[-1])\n`);
         triggerCopyToast("shell", "已执行抽壳挖空 (-2mm)");
       },
     },
     {
       id: "op-workplane",
-      title: `在此面建工作面 (faces('${pickedData.face.selector}').workplane())`,
-      category: "基准面",
-      shortcut: "📍",
-      icon: Box,
+      title: "在此面新建草图 (BuildSketch)",
+      category: "草图面",
+      shortcut: "✏️",
+      icon: Spline,
       action: () => {
-        onInjectCode?.(`part = part.faces("${pickedData.face.selector}").workplane()\n`);
+        const faceExpr = getFaceExpr(pickedData.face.selector);
+        onInjectCode?.(`    with BuildSketch(${faceExpr}):\n        Circle(radius=5)\n`);
         onApplyToBlockly?.("face", pickedData.face.selector);
-        triggerCopyToast("wp", "已建立工作基准面");
+        triggerCopyToast("wp", "已建立草图建造容器 BuildSketch");
       },
     },
     {
@@ -1517,6 +1545,46 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
           >
             {/* SVG 实时几何尺寸跟随投影预览 */}
             <svg className="w-full h-full pointer-events-none absolute inset-0">
+              {/* 0. 选定草图附着面的 3D 投影基准面高亮网格 */}
+              {(() => {
+                const z = pickedData.vertex?.z || 0;
+                const size = 20;
+                const c1 = projectToScreen(new THREE.Vector3(-size, -size, z));
+                const c2 = projectToScreen(new THREE.Vector3(size, -size, z));
+                const c3 = projectToScreen(new THREE.Vector3(size, size, z));
+                const c4 = projectToScreen(new THREE.Vector3(-size, size, z));
+                const center = projectToScreen(new THREE.Vector3(0, 0, z));
+                if (!c1 || !c2 || !c3 || !c4 || !center) return null;
+                return (
+                  <g opacity="0.85">
+                    <polygon
+                      points={`${c1.x},${c1.y} ${c2.x},${c2.y} ${c3.x},${c3.y} ${c4.x},${c4.y}`}
+                      fill="rgba(168, 85, 247, 0.12)"
+                      stroke="#a855f7"
+                      strokeWidth="1.5"
+                      strokeDasharray="4 3"
+                    />
+                    <circle cx={center.x} cy={center.y} r="3.5" fill="#a855f7" />
+                    <line x1={center.x - 10} y1={center.y} x2={center.x + 10} y2={center.y} stroke="#a855f7" strokeWidth="1" />
+                    <line x1={center.x} y1={center.y - 10} x2={center.x} y2={center.y + 10} stroke="#a855f7" strokeWidth="1" />
+                    <rect
+                      x={center.x + 12}
+                      y={center.y - 12}
+                      width="155"
+                      height="20"
+                      rx="4"
+                      fill="#161b22"
+                      fillOpacity="0.9"
+                      stroke="#a855f7"
+                      strokeWidth="0.8"
+                    />
+                    <text x={center.x + 16} y={center.y + 2} fill="#c084fc" fontSize="10" fontFamily="monospace" fontWeight="bold">
+                      草图附着面 ({pickedData.face.selector} Z={z})
+                    </text>
+                  </g>
+                );
+              })()}
+
               {/* 1. 圆形实时动态预览 */}
               {isSketchDrawing && sketchShape === "circle" && sketchStart && sketchCurrent && (() => {
                 const p1 = projectToScreen(sketchStart);
@@ -1650,7 +1718,11 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
           <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50 bg-[#161b22]/95 border border-amber-500/50 backdrop-blur-md rounded-xl shadow-2xl px-3 py-1.5 flex items-center gap-2 text-xs select-none flex-nowrap whitespace-nowrap">
             <div className="flex items-center gap-1.5 border-r border-[#30363d] pr-2.5 text-amber-400 font-semibold tracking-wide flex-shrink-0">
               <Pencil size={14} />
-              <span>平面草图</span>
+              <span>build123d 草图</span>
+            </div>
+            <div className="flex items-center gap-1 text-[10px] font-mono bg-purple-950/60 border border-purple-800/60 px-2 py-0.5 rounded text-purple-300">
+              <span>附着面:</span>
+              <span className="font-bold text-amber-300">{getFaceExpr(pickedData.face.selector)}</span>
             </div>
 
             {/* 草图形状切换 */}
@@ -1853,9 +1925,11 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
               {/* 拉伸成体 (E) */}
               <button
                 onClick={() => {
+                  const faceExpr = getFaceExpr(pickedData.face.selector);
                   onInjectCode?.(
-                    `${targetVar} = ${targetVar}.faces("${pickedData.face.selector}").workplane().circle(10).extrude(10)\n`
+                    `    with BuildSketch(${faceExpr}):\n        Circle(radius=10)\n    extrude(amount=10)\n`
                   );
+                  onApplyToBlockly?.("extrude", undefined, undefined, undefined, { distance: 10 });
                   triggerCopyToast("extrude", "已执行表面拉伸 (10mm)");
                 }}
                 title="表面拉伸 (E)"
@@ -1871,7 +1945,9 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
               {/* 表面打孔 (I) */}
               <button
                 onClick={() => {
-                  onInjectCode?.(`${targetVar} = ${targetVar}.faces("${pickedData.face.selector}").hole(diameter=5, depth=10)\n`);
+                  const faceExpr = getFaceExpr(pickedData.face.selector);
+                  onInjectCode?.(`    with Locations(${faceExpr}):\n        Hole(radius=2.5, depth=10)\n`);
+                  onApplyToBlockly?.("hole", undefined, undefined, undefined, { diameter: 5, depth: 10 });
                   triggerCopyToast("hole", "已表面打孔 hole(d=5, depth=10)");
                 }}
                 title="表面打孔 (I)"
@@ -1889,11 +1965,13 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
                 onClick={() => {
                   if (pickTab === "face") {
                     onInjectCode?.(
-                      `${targetVar} = ${targetVar}.faces("${pickedData.face.selector}").edges("%Circle").fillet(${quickRadius})\n`
+                      `    fillet(${targetVar}.faces().sort_by(Axis.Z)[-1].edges().filter_by(GeomType.CIRCLE), radius=${quickRadius})\n`
                     );
+                    onApplyToBlockly?.("edge", "faces_Z_circle", undefined, quickRadius);
                     triggerCopyToast("bore-fillet", `已孔口倒圆角 (${quickRadius}mm)`);
                   } else {
-                    onInjectCode?.(`${targetVar} = ${targetVar}.edges("${pickedData.edge.selector}").fillet(${quickRadius})\n`);
+                    onInjectCode?.(`    fillet(${targetVar}.faces().sort_by(Axis.Z)[-1].edges(), radius=${quickRadius})\n`);
+                    onApplyToBlockly?.("edge", pickedData.edge.selector, undefined, quickRadius);
                     triggerCopyToast("fillet", `已倒圆角 (${quickRadius}mm)`);
                   }
                 }}
@@ -1910,7 +1988,8 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
               {/* 倒斜角 */}
               <button
                 onClick={() => {
-                  onInjectCode?.(`${targetVar} = ${targetVar}.edges("${pickedData.edge.selector}").chamfer(${quickRadius})\n`);
+                  onInjectCode?.(`    chamfer(${targetVar}.faces().sort_by(Axis.Z)[-1].edges(), length=${quickRadius})\n`);
+                  onApplyToBlockly?.("edge", pickedData.edge.selector, undefined, quickRadius);
                   triggerCopyToast("chamfer", `已倒斜角 (${quickRadius}mm)`);
                 }}
                 title="倒斜角 (Chamfer)"
@@ -1926,7 +2005,8 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
               {/* 表面抽壳 */}
               <button
                 onClick={() => {
-                  onInjectCode?.(`${targetVar} = ${targetVar}.faces("${pickedData.face.selector}").shell(-2)\n`);
+                  const faceExpr = getFaceExpr(pickedData.face.selector);
+                  onInjectCode?.(`    offset(amount=-2, openings=${faceExpr})\n`);
                   triggerCopyToast("shell", "已执行表面抽壳 (-2mm)");
                 }}
                 title="表面抽壳 (Shell -2mm)"
@@ -1993,7 +2073,7 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
                   <button
                     onClick={() => {
                       onInjectCode?.(
-                        `part = part.faces("${pickedData.face.selector}").edges("%Circle").fillet(${quickRadius})\n`
+                        `    fillet(${targetVar}.faces().sort_by(Axis.Z)[-1].edges().filter_by(GeomType.CIRCLE), radius=${quickRadius})\n`
                       );
                       onApplyToBlockly?.("edge", "faces_Z_circle", undefined, quickRadius);
                       triggerCopyToast("bore-fillet", `已孔口倒圆角 (${quickRadius}mm)`);
@@ -2010,7 +2090,8 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
 
                   <button
                     onClick={() => {
-                      onInjectCode?.(`part = part.faces("${pickedData.face.selector}").hole(diameter=5, depth=10)\n`);
+                      const faceExpr = getFaceExpr(pickedData.face.selector);
+                      onInjectCode?.(`    with Locations(${faceExpr}):\n        Hole(radius=2.5, depth=10)\n`);
                       onApplyToBlockly?.("hole", undefined, undefined, undefined, { diameter: 5, depth: 10 });
                       triggerCopyToast("hole", "已执行打孔 hole(d=5, depth=10)");
                       setIsContextMenuOpen(false);
@@ -2026,23 +2107,25 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
 
                   <button
                     onClick={() => {
-                      onInjectCode?.(`part = part.faces("${pickedData.face.selector}").workplane()\n`);
+                      const faceExpr = getFaceExpr(pickedData.face.selector);
+                      onInjectCode?.(`    with BuildSketch(${faceExpr}):\n        Circle(radius=5)\n`);
                       onApplyToBlockly?.("face", pickedData.face.selector);
-                      triggerCopyToast("wp", "已建立工作基准面");
+                      triggerCopyToast("wp", "已在表面新建草图");
                       setIsContextMenuOpen(false);
                     }}
                     className="w-full text-left px-2.5 py-1.5 hover:bg-[#21262d] rounded-lg flex items-center justify-between transition"
                   >
                     <div className="flex items-center gap-2">
-                      <Box size={13} className="text-indigo-400" />
-                      <span>在此面建工作面</span>
+                      <Spline size={13} className="text-purple-400" />
+                      <span>在此面新建草图 (BuildSketch)</span>
                     </div>
                     <span className="text-[10px] text-gray-500 font-mono">{pickedData.face.selector}</span>
                   </button>
 
                   <button
                     onClick={() => {
-                      onInjectCode?.(`part = part.faces("${pickedData.face.selector}").shell(-2)\n`);
+                      const faceExpr = getFaceExpr(pickedData.face.selector);
+                      onInjectCode?.(`    offset(amount=-2, openings=${faceExpr})\n`);
                       triggerCopyToast("shell", "已执行表面抽壳 (-2mm)");
                       setIsContextMenuOpen(false);
                     }}
@@ -2061,7 +2144,7 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
                 <>
                   <button
                     onClick={() => {
-                      onInjectCode?.(`part = part.edges("${pickedData.edge.selector}").fillet(${quickRadius})\n`);
+                      onInjectCode?.(`    fillet(${targetVar}.faces().sort_by(Axis.Z)[-1].edges(), radius=${quickRadius})\n`);
                       onApplyToBlockly?.("edge", pickedData.edge.selector, undefined, quickRadius);
                       triggerCopyToast("fillet", `已倒圆角 (${quickRadius}mm)`);
                       setIsContextMenuOpen(false);
@@ -2077,7 +2160,7 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
 
                   <button
                     onClick={() => {
-                      onInjectCode?.(`part = part.edges("${pickedData.edge.selector}").chamfer(${quickRadius})\n`);
+                      onInjectCode?.(`    chamfer(${targetVar}.faces().sort_by(Axis.Z)[-1].edges(), length=${quickRadius})\n`);
                       onApplyToBlockly?.("edge", pickedData.edge.selector, undefined, quickRadius);
                       triggerCopyToast("chamfer", `已倒斜角 (${quickRadius}mm)`);
                       setIsContextMenuOpen(false);
@@ -2098,7 +2181,7 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
                   <button
                     onClick={() => {
                       onInjectCode?.(
-                        `part = part.faces(">Z").workplane().pushPoints([(${pickedData.vertex.x}, ${pickedData.vertex.y})]).hole(diameter=4, depth=6)\n`
+                        `    with Locations((${pickedData.vertex.x}, ${pickedData.vertex.y}, ${pickedData.vertex.z})):\n        Hole(radius=2.0, depth=6)\n`
                       );
                       triggerCopyToast("vertex-hole", "已注入点开孔代码");
                       setIsContextMenuOpen(false);
@@ -2146,7 +2229,7 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
 
               <button
                 onClick={() => {
-                  onInjectCode?.(`part = part.rotate((0, 0, 0), (0, 0, 1), 90)\n`);
+                  onInjectCode?.(`    # 围绕 Z 轴旋转 90 度\n    # rotate(about=Axis.Z, angle=90)\n`);
                   triggerCopyToast("rotate", "已围绕 Z 轴旋转 90°");
                   setIsContextMenuOpen(false);
                 }}

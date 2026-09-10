@@ -86,9 +86,21 @@ export const BottomInteractionDock: React.FC<BottomInteractionDockProps> = ({
       ? "|Z"
       : pickedFace.selector;
 
+  const getFaceExpr = (selector: string, varName: string = targetVar) => {
+    if (selector === ">Z") return `${varName}.faces().sort_by(Axis.Z)[-1]`;
+    if (selector === "<Z") return `${varName}.faces().sort_by(Axis.Z)[0]`;
+    if (selector === ">X") return `${varName}.faces().sort_by(Axis.X)[-1]`;
+    if (selector === "<X") return `${varName}.faces().sort_by(Axis.X)[0]`;
+    if (selector === ">Y") return `${varName}.faces().sort_by(Axis.Y)[-1]`;
+    if (selector === "<Y") return `${varName}.faces().sort_by(Axis.Y)[0]`;
+    if (selector === "|Z") return `${varName}.faces().filter_by(Axis.Z)`;
+    return `${varName}.faces().sort_by(Axis.Z)[-1]`;
+  };
+
   // 1. 面拉伸
   const handleExtrude = () => {
-    const codeSnippet = `${targetVar} = ${targetVar}.faces("${activeFaceSelector}").workplane().circle(8).extrude(${dimension})\n`;
+    const faceExpr = getFaceExpr(activeFaceSelector);
+    const codeSnippet = `    with BuildSketch(${faceExpr}):\n        Circle(radius=8)\n    extrude(amount=${dimension})\n`;
     onInjectCode(codeSnippet);
     onApplyToBlockly?.("face", activeFaceSelector, undefined, undefined, { extrude: dimension });
     showToast(`已在 [${activeFaceSelector}] 拉伸 +${dimension}mm`);
@@ -96,7 +108,8 @@ export const BottomInteractionDock: React.FC<BottomInteractionDockProps> = ({
 
   // 2. 面盲切挖槽
   const handleCutBlind = () => {
-    const codeSnippet = `${targetVar} = ${targetVar}.faces("${activeFaceSelector}").workplane().rect(10, 10).cutBlind(-${dimension})\n`;
+    const faceExpr = getFaceExpr(activeFaceSelector);
+    const codeSnippet = `    with BuildSketch(${faceExpr}):\n        Rectangle(10, 10)\n    extrude(amount=-${dimension}, mode=Mode.SUBTRACT)\n`;
     onInjectCode(codeSnippet);
     onApplyToBlockly?.("face", activeFaceSelector, undefined, undefined, { cutBlind: dimension });
     showToast(`已在 [${activeFaceSelector}] 挖槽 -${dimension}mm`);
@@ -104,18 +117,20 @@ export const BottomInteractionDock: React.FC<BottomInteractionDockProps> = ({
 
   // 3. 面开孔
   const handleFaceHole = () => {
-    const codeSnippet = `${targetVar} = ${targetVar}.faces("${activeFaceSelector}").workplane(centerOption="CenterOfMass").hole(diameter=5, depth=${dimension * 2})\n`;
+    const faceExpr = getFaceExpr(activeFaceSelector);
+    const codeSnippet = `    with Locations(${faceExpr}):\n        Hole(radius=2.5, depth=${dimension * 2})\n`;
     onInjectCode(codeSnippet);
     onApplyToBlockly?.("hole", undefined, undefined, undefined, { diameter: 5, depth: dimension * 2 });
-    showToast(`已在 [${activeFaceSelector}] 开孔 (d=5mm, 深=${dimension * 2}mm, 质心对齐)`);
+    showToast(`已在 [${activeFaceSelector}] 开孔 (d=5mm, 深=${dimension * 2}mm)`);
   };
 
-  // 4. 面建工作面
-  const handleWorkplane = () => {
-    const codeSnippet = `${targetVar} = ${targetVar}.faces("${activeFaceSelector}").workplane(centerOption="CenterOfMass")\n`;
+  // 4. 面建草图 (BuildSketch)
+  const handleCreateSketch = () => {
+    const faceExpr = getFaceExpr(activeFaceSelector);
+    const codeSnippet = `    with BuildSketch(${faceExpr}):\n        Circle(radius=5)\n`;
     onInjectCode(codeSnippet);
     onApplyToBlockly?.("face", activeFaceSelector);
-    showToast(`已在 [${activeFaceSelector}] 建立工作面 (CenterOfMass 质心对齐)`);
+    showToast(`已在 [${activeFaceSelector}] 建立草图容器 BuildSketch`);
   };
 
   // 5. 边倒圆角
@@ -124,19 +139,19 @@ export const BottomInteractionDock: React.FC<BottomInteractionDockProps> = ({
     let codeSnippet = "";
     if (edgeSelectorMode === "bore_circle") {
       selStr = 'faces(">Z").edges("%Circle")';
-      codeSnippet = `${targetVar} = ${targetVar}.faces(">Z").edges("%Circle").fillet(${dimension})\n`;
+      codeSnippet = `    fillet(${targetVar}.faces().sort_by(Axis.Z)[-1].edges().filter_by(GeomType.CIRCLE), radius=${dimension})\n`;
       onApplyToBlockly?.("edge", "faces_Z_circle", undefined, dimension);
     } else if (edgeSelectorMode === "all_circle") {
       selStr = 'edges("%Circle")';
-      codeSnippet = `${targetVar} = ${targetVar}.edges("%Circle").fillet(${dimension})\n`;
+      codeSnippet = `    fillet(${targetVar}.edges().filter_by(GeomType.CIRCLE), radius=${dimension})\n`;
       onApplyToBlockly?.("edge", "%Circle", undefined, dimension);
     } else if (edgeSelectorMode === "vertical") {
       selStr = 'edges("|Z")';
-      codeSnippet = `${targetVar} = ${targetVar}.edges("|Z").fillet(${dimension})\n`;
+      codeSnippet = `    fillet(${targetVar}.edges().filter_by(Axis.Z), radius=${dimension})\n`;
       onApplyToBlockly?.("edge", "|Z", undefined, dimension);
     } else {
       selStr = `edges("${pickedEdge.selector}")`;
-      codeSnippet = `${targetVar} = ${targetVar}.edges("${pickedEdge.selector}").fillet(${dimension})\n`;
+      codeSnippet = `    fillet(${targetVar}.faces().sort_by(Axis.Z)[-1].edges(), radius=${dimension})\n`;
       onApplyToBlockly?.("edge", pickedEdge.selector, undefined, dimension);
     }
     onInjectCode(codeSnippet);
@@ -149,19 +164,19 @@ export const BottomInteractionDock: React.FC<BottomInteractionDockProps> = ({
     let codeSnippet = "";
     if (edgeSelectorMode === "bore_circle") {
       selStr = 'faces(">Z").edges("%Circle")';
-      codeSnippet = `${targetVar} = ${targetVar}.faces(">Z").edges("%Circle").chamfer(${dimension})\n`;
+      codeSnippet = `    chamfer(${targetVar}.faces().sort_by(Axis.Z)[-1].edges().filter_by(GeomType.CIRCLE), length=${dimension})\n`;
       onApplyToBlockly?.("edge", "faces_Z_circle", undefined, dimension);
     } else if (edgeSelectorMode === "all_circle") {
       selStr = 'edges("%Circle")';
-      codeSnippet = `${targetVar} = ${targetVar}.edges("%Circle").chamfer(${dimension})\n`;
+      codeSnippet = `    chamfer(${targetVar}.edges().filter_by(GeomType.CIRCLE), length=${dimension})\n`;
       onApplyToBlockly?.("edge", "%Circle", undefined, dimension);
     } else if (edgeSelectorMode === "vertical") {
       selStr = 'edges("|Z")';
-      codeSnippet = `${targetVar} = ${targetVar}.edges("|Z").chamfer(${dimension})\n`;
+      codeSnippet = `    chamfer(${targetVar}.edges().filter_by(Axis.Z), length=${dimension})\n`;
       onApplyToBlockly?.("edge", "|Z", undefined, dimension);
     } else {
       selStr = `edges("${pickedEdge.selector}")`;
-      codeSnippet = `${targetVar} = ${targetVar}.edges("${pickedEdge.selector}").chamfer(${dimension})\n`;
+      codeSnippet = `    chamfer(${targetVar}.faces().sort_by(Axis.Z)[-1].edges(), length=${dimension})\n`;
       onApplyToBlockly?.("edge", pickedEdge.selector, undefined, dimension);
     }
     onInjectCode(codeSnippet);
@@ -170,7 +185,7 @@ export const BottomInteractionDock: React.FC<BottomInteractionDockProps> = ({
 
   // 7. 点打孔
   const handleVertexHole = () => {
-    const codeSnippet = `${targetVar} = ${targetVar}.faces(">Z").workplane().pushPoints([(${pickedVertex.x}, ${pickedVertex.y})]).hole(diameter=4, depth=${dimension * 2})\n`;
+    const codeSnippet = `    with Locations((${pickedVertex.x}, ${pickedVertex.y}, ${pickedVertex.z})):\n        Hole(radius=2.0, depth=${dimension * 2})\n`;
     onInjectCode(codeSnippet);
     showToast(`已在点 (${pickedVertex.x}, ${pickedVertex.y}) 打孔`);
   };
@@ -276,7 +291,10 @@ export const BottomInteractionDock: React.FC<BottomInteractionDockProps> = ({
       >
         {pickTab === "face" && (
           <div className="flex items-center gap-1.5">
-            <span className={`${isLight ? "text-gray-500" : "text-gray-400"} font-medium`}>目标:</span>
+            <span className={`${isLight ? "text-gray-500" : "text-gray-400"} font-medium`}>附着面:</span>
+            <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-purple-500/15 text-purple-400 font-bold">
+              {targetVar}.faces()
+            </span>
             <select
               value={faceSelectorMode}
               onChange={(e) => setFaceSelectorMode(e.target.value)}
@@ -285,7 +303,7 @@ export const BottomInteractionDock: React.FC<BottomInteractionDockProps> = ({
               } font-mono focus:outline-none cursor-pointer text-[11px]`}
             >
               <option value="single" className={isLight ? "bg-white text-gray-800" : "bg-[#161b22] text-gray-200"}>
-                当前拾取 ({pickedFace.selector})
+                {pickedFace.selector === ">Z" ? "最高顶面 (>Z)" : pickedFace.selector === "<Z" ? "最低底面 (<Z)" : `当前拾取 (${pickedFace.selector})`}
               </option>
               <option value="both_z" className={isLight ? "bg-white text-gray-800" : "bg-[#161b22] text-gray-200"}>
                 顶底端面 (&gt;Z or &lt;Z)
@@ -394,16 +412,16 @@ export const BottomInteractionDock: React.FC<BottomInteractionDockProps> = ({
             </button>
 
             <button
-              onClick={handleWorkplane}
-              title={`在 ${activeFaceSelector} 建立新基准平面`}
+              onClick={handleCreateSketch}
+              title={`在所选面 ${activeFaceSelector} 建立草图容器 BuildSketch`}
               className={`px-2 py-1 ${
                 isLight
                   ? "bg-[#f8fafc] hover:bg-purple-50 text-purple-700 border-[#d0d7de] hover:border-purple-300 shadow-2xs font-medium"
                   : "bg-[#21262d] hover:bg-purple-600/30 text-purple-300 hover:text-purple-100 border-[#30363d]"
               } rounded-lg flex items-center gap-1 border transition active:scale-95`}
             >
-              <Box size={13} className={isLight ? "text-purple-600" : "text-purple-400"} />
-              <span>工作面</span>
+              <Spline size={13} className={isLight ? "text-purple-600" : "text-purple-400"} />
+              <span>新建草图</span>
             </button>
           </>
         )}
