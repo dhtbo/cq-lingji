@@ -481,16 +481,33 @@ export default function StudioPage() {
     });
   }, []);
 
-  // 添加文件或文件夹
+  // 添加文件或文件夹 (支持文本文件与二进制 3D 资产)
   const handleAddNode = useCallback(
-    (parentPath: string, name: string, type: NodeType) => {
+    (
+      parentPath: string,
+      name: string,
+      type: NodeType,
+      customContent?: string,
+      isBinary?: boolean,
+      fileSize?: number
+    ) => {
       setWorkspace((prev) => {
         const fullPath = parentPath ? `${parentPath}/${name}` : name;
         const initialContent =
-          type === "file"
+          customContent !== undefined
+            ? customContent
+            : type === "file"
             ? `# -*- coding: utf-8 -*-\nfrom build123d import *\n\n# 模块: ${name}\n`
             : "";
-        const updatedRoot = addNode(prev.root, parentPath, name, type, initialContent);
+        const updatedRoot = addNode(
+          prev.root,
+          parentPath,
+          name,
+          type,
+          initialContent,
+          isBinary ?? false,
+          fileSize
+        );
 
         let nextActive = prev.activeFilePath;
         let nextOpen = prev.openFiles;
@@ -515,6 +532,35 @@ export default function StudioPage() {
       });
     },
     [showToast]
+  );
+
+  // 批量导入本地文件 (STL, STEP, SVG, DXF, PY 等)
+  const handleImportFiles = useCallback(
+    (targetParentPath: string, files: File[]) => {
+      let importedCount = 0;
+      files.forEach((file) => {
+        const ext = file.name.split(".").pop()?.toLowerCase() || "";
+        const isBin = ["stl", "step", "stp", "brep"].includes(ext);
+
+        const reader = new FileReader();
+        if (isBin) {
+          reader.readAsDataURL(file);
+          reader.onload = () => {
+            const dataUrl = reader.result as string;
+            handleAddNode(targetParentPath, file.name, "file", dataUrl, true, file.size);
+          };
+        } else {
+          reader.readAsText(file, "utf-8");
+          reader.onload = () => {
+            const textContent = reader.result as string;
+            handleAddNode(targetParentPath, file.name, "file", textContent, false, file.size);
+          };
+        }
+        importedCount++;
+      });
+      showToast(`📁 正在导入 ${importedCount} 个本地文件...`);
+    },
+    [handleAddNode, showToast]
   );
 
   // 删除文件或文件夹
@@ -1174,6 +1220,7 @@ export default function StudioPage() {
             themeName: opt.name,
           })
         }
+        onUpdateSettings={handleUpdateSettings}
       />
 
       {/* 主工作区 (二态自适应：代码优先 / 积木模式，常驻挂载以保障零延迟与无损切换) */}
@@ -1184,6 +1231,7 @@ export default function StudioPage() {
             {/* 1. 文件夹式多文件工程资源管理器侧边栏 */}
             <ProjectExplorer
               workspace={workspace}
+              isLightMode={isLightMode}
               onSelectFile={handleSelectFile}
               onAddNode={handleAddNode}
               onDeleteNode={handleDeleteNode}
@@ -1191,6 +1239,7 @@ export default function StudioPage() {
               onSetEntrypoint={handleSetEntrypoint}
               onExportProject={handleExportProject}
               onImportProject={handleImportProject}
+              onImportFiles={handleImportFiles}
               isOpen={isExplorerOpen}
               onToggleOpen={() => setIsExplorerOpen((prev) => !prev)}
             />
@@ -1200,6 +1249,7 @@ export default function StudioPage() {
               {/* 顶部标签栏 */}
               <EditorTabs
                 workspace={workspace}
+                isLightMode={isLightMode}
                 onSelectFile={handleSelectFile}
                 onCloseFile={handleCloseFile}
               />

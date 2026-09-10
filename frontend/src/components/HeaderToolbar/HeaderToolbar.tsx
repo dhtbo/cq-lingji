@@ -23,6 +23,8 @@ import {
   FileDown,
   FolderOpen,
   Printer,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { CAD_TEMPLATES, CadTemplate } from "../Templates/cadTemplates";
 import { HelpModal } from "./HelpModal";
@@ -59,6 +61,7 @@ interface HeaderToolbarProps {
   settings: EditorSettings;
   onOpenSettings: () => void;
   onSelectThemeColor: (opt: ThemeColorOption) => void;
+  onUpdateSettings?: (newSettings: EditorSettings) => void;
 }
 
 export const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
@@ -86,6 +89,7 @@ export const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
   settings,
   onOpenSettings,
   onSelectThemeColor,
+  onUpdateSettings,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showHelp, setShowHelp] = useState(false);
@@ -383,6 +387,29 @@ export const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
                 </div>
 
                 <div className="my-1 border-t border-gray-100" />
+
+                {onUpdateSettings && (
+                  <button
+                    onClick={() => {
+                      const nextMode = settings.colorMode === "light" ? "dark" : "light";
+                      onUpdateSettings({ ...settings, colorMode: nextMode });
+                      setShowSettingsMenu(false);
+                    }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-emerald-50 hover:text-emerald-700 flex items-center justify-between transition-colors"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      {settings.colorMode === "light" ? (
+                        <Moon size={13} className="text-indigo-500" />
+                      ) : (
+                        <Sun size={13} className="text-amber-500" />
+                      )}
+                      <span>{settings.colorMode === "light" ? "切换至深色黑夜" : "切换至浅色白天"}</span>
+                    </span>
+                    <span className="text-[10px] text-gray-400 font-mono">
+                      {settings.colorMode === "light" ? "Dark" : "Light"}
+                    </span>
+                  </button>
+                )}
 
                 <button
                   onClick={() => {

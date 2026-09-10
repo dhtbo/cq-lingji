@@ -567,16 +567,62 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
     };
   }, []);
 
+  // 鼠标是否悬停在 3D 视口区域内部
+  const isViewerHoveredRef = useRef(false);
+
   // 键盘快捷键 (3D 快捷交互体系: Shift+A 添加, F3/Space 搜索, Ctrl+B 倒角, E 拉伸, I 打孔, 1/2/3 模态, Tab 轮转, Esc 退出)
+  // 严格隔离：当用户在代码编辑器、输入框、可编辑区或鼠标未悬停在 3D 视口时，绝不截获任何按键！
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) {
-        if (e.key === "Escape") {
-          setIsCommandPaletteOpen(false);
-          setIsAddMenuOpen(false);
-          setIsContextMenuOpen(false);
+      // 1. 检查事件触发源元素与当前活跃获得焦点的元素
+      const target = (e.target || document.activeElement) as HTMLElement | null;
+      if (target) {
+        // 标准输入与选择表单
+        const tag = target.tagName?.toUpperCase();
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+          if (e.key === "Escape") {
+            setIsCommandPaletteOpen(false);
+            setIsAddMenuOpen(false);
+            setIsContextMenuOpen(false);
+          }
+          return;
         }
+
+        // 富文本与可编辑内容
+        if (target.isContentEditable || target.getAttribute?.("contenteditable") === "true") {
+          return;
+        }
+
+        // Monaco 编辑器、搜索浮窗、弹窗或对话框内部
+        if (
+          target.closest?.(".monaco-editor") ||
+          target.closest?.(".monaco-diff-editor") ||
+          target.closest?.("[role='textbox']") ||
+          target.closest?.("[role='dialog']") ||
+          target.closest?.(".blocklyWidgetDiv") ||
+          target.closest?.(".blocklyDropDownDiv")
+        ) {
+          return;
+        }
+      }
+
+      // 2. 检查全局活跃焦点 activeElement 是否在代码编辑器中
+      const activeEl = document.activeElement as HTMLElement | null;
+      if (activeEl) {
+        const activeTag = activeEl.tagName?.toUpperCase();
+        if (
+          activeTag === "INPUT" ||
+          activeTag === "TEXTAREA" ||
+          activeEl.isContentEditable ||
+          activeEl.closest?.(".monaco-editor") ||
+          activeEl.closest?.("[role='textbox']")
+        ) {
+          return;
+        }
+      }
+
+      // 3. 严格限制：3D 视口专属单键与操作快捷键仅当用户鼠标悬停在 3D 视口内时生效
+      if (!isViewerHoveredRef.current) {
         return;
       }
 
@@ -1525,6 +1571,12 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
         className="relative flex-1 w-full h-full overflow-hidden"
         onContextMenu={handleContextMenu}
         onClick={handleViewportClick}
+        onMouseEnter={() => {
+          isViewerHoveredRef.current = true;
+        }}
+        onMouseLeave={() => {
+          isViewerHoveredRef.current = false;
+        }}
       >
         {/* three-cad-viewer 容器 */}
         <div

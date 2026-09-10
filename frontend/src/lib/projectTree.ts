@@ -72,7 +72,9 @@ export function addNode(
   parentPath: string,
   name: string,
   type: NodeType,
-  initialContent: string = ""
+  initialContent: string = "",
+  isBinary: boolean = false,
+  fileSize?: number
 ): ProjectFileNode {
   const normParent = normalizePath(parentPath);
   const cleanName = name.trim();
@@ -96,6 +98,8 @@ export function addNode(
         content: type === "file" ? initialContent : undefined,
         children: type === "directory" ? [] : undefined,
         isEntry: false,
+        isBinary,
+        fileSize,
       };
       return {
         ...curr,

@@ -57,8 +57,8 @@ export const THEME_COLOR_OPTIONS: ThemeColorOption[] = [
 
 export const DEFAULT_EDITOR_SETTINGS: EditorSettings = {
   colorMode: "dark",
-  themeColor: "#FFDB29",
-  themeName: "经典黄",
+  themeColor: "#10B981",
+  themeName: "翠石绿",
   syntaxCheck: true,
   indentGuides: true,
   translateErrors: true,

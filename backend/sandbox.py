@@ -40,7 +40,7 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# 允许导入的白名单模块
+# 允许导入的白名单模块（数学计算、几何造型、算法优化与安全工具库）
 ALLOWED_MODULES = {
     "cadquery",
     "cq",
@@ -56,6 +56,16 @@ ALLOWED_MODULES = {
     "collections",
     "dataclasses",
     "ocp_vscode",
+    "copy",
+    "timeit",
+    "re",
+    "enum",
+    "cmath",
+    "decimal",
+    "fractions",
+    "operator",
+    "string",
+    "json",
 }
 
 def _safe_import(name: str, *args: Any, **kwargs: Any) -> Any:

@@ -113,10 +113,10 @@ export const THEME_TOKENS: Record<string, ThemeToken> = {
 };
 
 /**
- * 根据主题颜色 ID、Hex 十六进制或名称获取对应的设计令牌，默认返回经典黄
+ * 根据主题颜色 ID、Hex 十六进制或名称获取对应的设计令牌，默认返回翠石绿
  */
 export function getThemeToken(colorOrId?: string): ThemeToken {
-  if (!colorOrId) return THEME_TOKENS["classic-yellow"];
+  if (!colorOrId) return THEME_TOKENS["forest-green"];
   if (THEME_TOKENS[colorOrId]) return THEME_TOKENS[colorOrId];
 
   const lower = colorOrId.toLowerCase().trim();
@@ -130,5 +130,5 @@ export function getThemeToken(colorOrId?: string): ThemeToken {
       return t;
     }
   }
-  return THEME_TOKENS["classic-yellow"];
+  return THEME_TOKENS["forest-green"];
 }

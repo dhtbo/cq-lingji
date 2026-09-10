@@ -13,6 +13,8 @@ export interface ProjectFileNode {
   blocklyXml?: string; // 积木 XML 数据
   children?: ProjectFileNode[]; // 目录子节点
   isEntry?: boolean; // 是否为主执行入口 (如 main.py)
+  isBinary?: boolean; // 是否为二进制资产文件 (如 STL, STEP)
+  fileSize?: number; // 文件大小 (字节)
 }
 
 export interface ProjectWorkspace {
