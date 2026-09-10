@@ -85,10 +85,23 @@ export function addNode(
   function cloneAndAdd(curr: ProjectFileNode): ProjectFileNode {
     const currNorm = normalizePath(curr.path);
     if (currNorm === normParent && curr.type === "directory") {
-      // 检查重名
+      // 检查重名：若已存在同名文件，覆盖更新其内容与文件属性
       const existing = curr.children?.some((c) => c.name === cleanName);
       if (existing) {
-        return curr;
+        return {
+          ...curr,
+          children: (curr.children || []).map((c) => {
+            if (c.name === cleanName && c.type === "file") {
+              return {
+                ...c,
+                content: initialContent,
+                isBinary,
+                fileSize: fileSize !== undefined ? fileSize : c.fileSize,
+              };
+            }
+            return c;
+          }),
+        };
       }
       const newNode: ProjectFileNode = {
         id: `node_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,

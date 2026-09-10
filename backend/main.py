@@ -2,6 +2,7 @@
 CadQuery Blockly Studio - 后端核心服务
 提供 CadQuery 脚本安全沙箱执行、三维网格序列化、STL/STEP 导出及健康检查
 """
+import base64
 import io
 import os
 import sys
@@ -79,6 +80,14 @@ class ExportRequest(BaseModel):
     filename: Optional[str] = Field(None, description="导出自定义文件名")
     files: Optional[Dict[str, str]] = Field(None, description="文件夹工程全量文件字典")
     entrypoint: Optional[str] = Field(None, description="主入口文件路径")
+
+
+class ModelPreviewRequest(BaseModel):
+    filename: str = Field(..., description="模型文件名（如 part.step, model.stl, sketch.svg）")
+    content: str = Field(..., description="文件内容（UTF-8 文本或 Base64 编码的 Data URL）")
+    tolerance: float = Field(0.01, ge=0.001, le=0.5, description="B-Rep 网格细分线性公差")
+    angular_tolerance: float = Field(0.1, ge=0.01, le=1.0, description="B-Rep 网格细分角度公差")
+    color: Optional[str] = Field("#10B981", description="预览基础着色（默认翠石绿）")
 
 
 @app.get("/api/v1/health")
@@ -182,6 +191,85 @@ async def render_cad(req: RenderRequest):
         "total_steps": len(steps),
         "stdout": captured_stdout,
     }
+
+
+@app.post("/api/v1/preview-model")
+async def preview_model(req: ModelPreviewRequest):
+    """
+    解析项目中的 3D 几何资产（STEP, STL, SVG, BREP 等）并转换为 three-cad-viewer 规范的 JSON 网格数据
+    """
+    filename = req.filename.strip()
+    ext = os.path.splitext(filename)[1].lower()
+    if not ext:
+        raise HTTPException(status_code=400, detail="未指定有效的文件扩展名")
+
+    raw_content = req.content.strip()
+    if not raw_content:
+        raise HTTPException(status_code=400, detail="文件内容为空")
+
+    # 1. 还原二进制或文本数据
+    file_bytes: bytes
+    if raw_content.startswith("data:") and ";base64," in raw_content:
+        base64_str = raw_content.split(";base64,")[1]
+        try:
+            file_bytes = base64.b64decode(base64_str)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Base64 解码失败: {e}")
+    else:
+        file_bytes = raw_content.encode("utf-8")
+
+    # 2. 写入临时文件以供 OpenCASCADE / build123d 加载
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tf:
+        temp_path = tf.name
+        tf.write(file_bytes)
+
+    start_time = time.perf_counter()
+    try:
+        cad_obj = None
+        if ext in [".step", ".stp"]:
+            cad_obj = b3d.import_step(temp_path)
+        elif ext == ".stl":
+            cad_obj = b3d.import_stl(temp_path)
+        elif ext == ".svg":
+            cad_obj = b3d.import_svg(temp_path)
+        elif ext == ".brep":
+            cad_obj = b3d.import_brep(temp_path)
+        else:
+            raise ValueError(f"暂不支持预览格式: '{ext}'。支持: .step, .stp, .stl, .svg, .brep")
+
+        if cad_obj is None:
+            raise ValueError(f"无法从文件 '{filename}' 中载入几何实体")
+
+        # 3. 序列化为网格数据
+        mesh_data = serialize_cad_object(
+            cad_obj,
+            name=filename,
+            tolerance=req.tolerance,
+            angular_tolerance=req.angular_tolerance,
+            color=req.color or "#10B981",
+        )
+        duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
+        return {
+            "status": "success",
+            "execution_time_ms": duration_ms,
+            "filename": filename,
+            "format": ext[1:].upper(),
+            "mesh": mesh_data,
+        }
+    except Exception as e:
+        logger.error(f"模型资产预览失败 ({filename}): {e}", exc_info=True)
+        return {
+            "status": "error",
+            "filename": filename,
+            "detail": f"解析模型失败: {e}",
+            "mesh": None,
+        }
+    finally:
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
 
 
 @app.post("/api/v1/export/stl")

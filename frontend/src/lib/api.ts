@@ -189,3 +189,47 @@ export async function analyzeCadPrintability(
   return await response.json();
 }
 
+export interface ModelPreviewResult {
+  status: "success" | "error";
+  execution_time_ms?: number;
+  filename: string;
+  format?: string;
+  mesh?: any;
+  detail?: string;
+}
+
+/**
+ * 请求后端解析模型资产 (STEP, STL, SVG, BREP 等) 并生成 3D 拓扑网格
+ * @param filename 模型文件名
+ * @param content 模型内容 (UTF-8 文本或 Base64 Data URL)
+ * @param color 默认预览基础着色
+ * @param tolerance 细分公差
+ * @returns 包含 mesh 网格的模型预览结果
+ */
+export async function previewModelAsset(
+  filename: string,
+  content: string,
+  color: string = "#10B981",
+  tolerance: number = 0.01
+): Promise<ModelPreviewResult> {
+  const response = await fetch(`${API_BASE}/api/v1/preview-model`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      filename,
+      content,
+      color,
+      tolerance,
+    }),
+  });
+
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(errData.detail || `模型资产解析失败 (${response.status})`);
+  }
+
+  return await response.json();
+}
+

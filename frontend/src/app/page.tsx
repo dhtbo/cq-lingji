@@ -38,6 +38,7 @@ import {
   setEntrypoint,
 } from "@/lib/projectTree";
 import { ProjectExplorer, EditorTabs } from "@/components/ProjectExplorer/ProjectExplorer";
+import { ModelAssetViewer } from "@/components/ProjectExplorer/ModelAssetViewer";
 import { convertPythonToBlockly } from "@/lib/pythonToBlockly";
 import { convertBuild123dToCadQuery } from "@/lib/build123dToCadquery";
 import { workspaceToBuild123d } from "@/components/BlocklyEditor/generator/build123d";
@@ -46,6 +47,7 @@ import {
   renderBuild123dCode,
   downloadCadExport,
   checkBackendHealth,
+  previewModelAsset,
   StepInfo,
 } from "@/lib/api";
 import {
@@ -133,6 +135,24 @@ export default function StudioPage() {
     createDefaultProject("我的3D作品", "")
   );
   const [isExplorerOpen, setIsExplorerOpen] = useState<boolean>(true);
+
+  // 3D 模型资产预览状态管理
+  const [modelLoading, setModelLoading] = useState<boolean>(false);
+  const [modelError, setModelError] = useState<string | null>(null);
+  const prevActivePathRef = useRef<string>(workspace.activeFilePath);
+  const lastLoadedModelPathRef = useRef<string | null>(null);
+
+  // 当前激活节点推导
+  const activeNode = useMemo(() => {
+    return findNodeByPath(workspace.root, workspace.activeFilePath);
+  }, [workspace.root, workspace.activeFilePath]);
+
+  // 判断当前激活的文件是否为 3D 模型资产 (STEP, STL, SVG, BREP 等)
+  const isCurrentFileModelAsset = useMemo(() => {
+    if (!workspace.activeFilePath) return false;
+    const ext = workspace.activeFilePath.slice(workspace.activeFilePath.lastIndexOf(".")).toLowerCase();
+    return [".step", ".stp", ".stl", ".brep", ".svg"].includes(ext);
+  }, [workspace.activeFilePath]);
 
   // 视图模态：'code' (代码模式，默认) | 'block' (积木模式)
   const [viewMode, setViewMode] = useState<ViewMode>("code");
@@ -399,9 +419,82 @@ export default function StudioPage() {
     });
   };
 
-  // 手动运行渲染 (执行当前多文件工程)
+  // 载入模型资产 (STEP, STL, SVG, BREP 等) 并在 3D 视口中实时网格化
+  const loadModelAssetPreview = useCallback(
+    async (fileName: string, fileContent: string) => {
+      if (!fileContent) {
+        setModelError("模型文件内容为空");
+        return;
+      }
+      setModelLoading(true);
+      setModelError(null);
+      setLoading(true);
+      try {
+        const res = await previewModelAsset(fileName, fileContent, "#10B981", 0.01);
+        if (res.status === "success" && res.mesh) {
+          setMeshData(res.mesh);
+          if (res.execution_time_ms !== undefined) {
+            setExecTime(res.execution_time_ms);
+          }
+          setSteps([]);
+          setCurrentStep(1);
+          setTotalSteps(1);
+          setModelError(null);
+          showToast(`✨ 已成功在 3D 视口载入模型: ${fileName}`);
+        } else {
+          const err = res.detail || "无法解析模型几何数据";
+          setModelError(err);
+          showToast(`⚠️ 模型载入异常: ${err}`);
+        }
+      } catch (err: any) {
+        const msg = err.message || "请求模型几何渲染失败";
+        setModelError(msg);
+        showToast(`⚠️ 模型载入失败: ${msg}`);
+      } finally {
+        setModelLoading(false);
+        setLoading(false);
+      }
+    },
+    [showToast]
+  );
+
+  // 监听当前文件切换，自动在代码编辑与 3D 模型资产视口预览之间无缝流转
+  useEffect(() => {
+    const currentPath = workspace.activeFilePath;
+    const prevPath = prevActivePathRef.current;
+    prevActivePathRef.current = currentPath;
+
+    if (!currentPath) return;
+
+    const ext = currentPath.slice(currentPath.lastIndexOf(".")).toLowerCase();
+    const isModel = [".step", ".stp", ".stl", ".brep", ".svg"].includes(ext);
+
+    if (isModel) {
+      if (lastLoadedModelPathRef.current !== currentPath) {
+        const node = findNodeByPath(workspace.root, currentPath);
+        if (node && node.content) {
+          lastLoadedModelPathRef.current = currentPath;
+          loadModelAssetPreview(node.name, node.content);
+        }
+      }
+    } else {
+      if (lastLoadedModelPathRef.current !== null) {
+        // 从 3D 模型切回 Python 代码文件，重置标记并重新编译当前代码以恢复视口
+        lastLoadedModelPathRef.current = null;
+        const node = findNodeByPath(workspace.root, currentPath);
+        const targetCode = node?.content ?? code;
+        performRender(targetCode);
+      }
+    }
+  }, [workspace.activeFilePath, workspace.root, loadModelAssetPreview, performRender, code]);
+
+  // 手动运行渲染 (执行当前多文件工程，若当前为模型资产则刷新预览)
   const handleManualRun = () => {
-    performRender(code);
+    if (isCurrentFileModelAsset && activeNode) {
+      loadModelAssetPreview(activeNode.name, activeNode.content || "");
+    } else {
+      performRender(code);
+    }
   };
 
   // 切换活动编辑文件
@@ -1254,43 +1347,59 @@ export default function StudioPage() {
                 onCloseFile={handleCloseFile}
               />
 
-              {/* 核心工作区 (Monaco 或 Blockly) */}
+              {/* 核心工作区 (模型资产检视 / Monaco 代码 / Blockly 积木) */}
               <div className="flex-1 relative min-h-0 overflow-hidden">
-                {/* 1. 代码模式视图 (Monaco) */}
-                <div
-                  className={`w-full h-full ${viewMode === "code" ? "block" : "hidden"}`}
-                  style={{ display: viewMode === "code" ? "block" : "none" }}
-                >
-                  <PythonEditor
-                    code={code}
-                    onChange={handleMonacoCodeChange}
-                    isLocked={isLocked}
-                    onToggleLock={handleToggleLock}
-                    errorMessage={errorMessage}
-                    stdout={stdout}
-                    execTime={execTime}
-                    isSearchOpen={isSearchOpen}
-                    onCloseSearch={() => setIsSearchOpen(false)}
-                    isConsoleOpen={isConsoleOpen}
-                    onToggleConsole={() => setIsConsoleOpen((prev) => !prev)}
-                    indentGuides={settings.indentGuides}
-                    colorMode={settings.colorMode}
-                    onCodeToBlockly={handleCodeToBlockly}
+                {isCurrentFileModelAsset && activeNode ? (
+                  <ModelAssetViewer
+                    filePath={workspace.activeFilePath}
+                    fileName={activeNode.name}
+                    fileContent={activeNode.content || ""}
+                    isBinary={activeNode.isBinary}
+                    fileSize={activeNode.fileSize}
+                    isLightMode={isLightMode}
+                    loading={modelLoading}
+                    errorMessage={modelError}
+                    onReload={() => loadModelAssetPreview(activeNode.name, activeNode.content || "")}
                   />
-                </div>
+                ) : (
+                  <>
+                    {/* 1. 代码模式视图 (Monaco) */}
+                    <div
+                      className={`w-full h-full ${viewMode === "code" ? "block" : "hidden"}`}
+                      style={{ display: viewMode === "code" ? "block" : "none" }}
+                    >
+                      <PythonEditor
+                        code={code}
+                        onChange={handleMonacoCodeChange}
+                        isLocked={isLocked}
+                        onToggleLock={handleToggleLock}
+                        errorMessage={errorMessage}
+                        stdout={stdout}
+                        execTime={execTime}
+                        isSearchOpen={isSearchOpen}
+                        onCloseSearch={() => setIsSearchOpen(false)}
+                        isConsoleOpen={isConsoleOpen}
+                        onToggleConsole={() => setIsConsoleOpen((prev) => !prev)}
+                        indentGuides={settings.indentGuides}
+                        colorMode={settings.colorMode}
+                        onCodeToBlockly={handleCodeToBlockly}
+                      />
+                    </div>
 
-                {/* 2. 积木模式视图 (Blockly) */}
-                <div
-                  className={`w-full h-full ${viewMode === "block" ? "block" : "hidden"}`}
-                  style={{ display: viewMode === "block" ? "block" : "none" }}
-                >
-                  <BlocklyWorkspace
-                    onCodeChange={handleBlocklyCodeChange}
-                    workspaceRefOut={blocklyWorkspaceRef}
-                    onWorkspaceReady={handleWorkspaceReady}
-                    colorMode={settings.colorMode}
-                  />
-                </div>
+                    {/* 2. 积木模式视图 (Blockly) */}
+                    <div
+                      className={`w-full h-full ${viewMode === "block" ? "block" : "hidden"}`}
+                      style={{ display: viewMode === "block" ? "block" : "none" }}
+                    >
+                      <BlocklyWorkspace
+                        onCodeChange={handleBlocklyCodeChange}
+                        workspaceRefOut={blocklyWorkspaceRef}
+                        onWorkspaceReady={handleWorkspaceReady}
+                        colorMode={settings.colorMode}
+                      />
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </Panel>
