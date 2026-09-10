@@ -9,8 +9,22 @@ import io
 import logging
 import math
 import random
+import sys
+import types
 import traceback
 from typing import Any, Dict, List, Optional, Tuple
+
+# 垫片注入：兼容 novtk 版本的 cadquery-ocp 环境，避免因缺失 VTK 扩展导致 cadquery 导入失败
+if "OCP.IVtkOCC" not in sys.modules:
+    _mod_occ = types.ModuleType("OCP.IVtkOCC")
+    _mod_occ.IVtkOCC_Shape = type("IVtkOCC_Shape", (), {})
+    _mod_occ.IVtkOCC_ShapeMesher = type("IVtkOCC_ShapeMesher", (), {})
+    sys.modules["OCP.IVtkOCC"] = _mod_occ
+
+if "OCP.IVtkVTK" not in sys.modules:
+    _mod_vtk = types.ModuleType("OCP.IVtkVTK")
+    _mod_vtk.IVtkVTK_ShapeData = type("IVtkVTK_ShapeData", (), {})
+    sys.modules["OCP.IVtkVTK"] = _mod_vtk
 
 try:
     import cadquery as cq
@@ -358,6 +372,22 @@ def _create_ocp_vscode_adapter(show_func: Any, show_object_func: Any, reset_func
     return mod
 
 
+def _create_cq_vis_adapter(studio_show: Any, show_object: Any, reset_show: Any) -> types.ModuleType:
+    """
+    创建并返回 cadquery.vis 兼容模块
+    支持用户编写 from cadquery.vis import show / show_object 并直接路由到工作台视口渲染
+    避免在无 VTK 扩展环境下抛出 ModuleNotFoundError: No module named 'OCP.IVtkOCC'
+    """
+    mod = types.ModuleType("cadquery.vis")
+    mod.show = studio_show
+    mod.show_object = show_object
+    mod.reset_show = reset_show
+    mod.__all__ = ["show", "show_object", "reset_show"]
+    mod.__file__ = "cadquery_vis_adapter.py"
+    return mod
+
+
+
 def _run_script_worker(
     code: str,
     files: Optional[Dict[str, str]] = None,
@@ -462,8 +492,15 @@ def _run_script_worker(
         "reset_show": _reset_show,
     }
 
-    # 创建 ocp_vscode 兼容模块对象
+    # 创建 ocp_vscode 与 cadquery.vis 兼容模块对象
     ocp_adapter = _create_ocp_vscode_adapter(_studio_show, _show_object, _reset_show)
+    cq_vis_adapter = _create_cq_vis_adapter(_studio_show, _show_object, _reset_show)
+    sys.modules["cadquery.vis"] = cq_vis_adapter
+    if cq is not None:
+        try:
+            cq.vis = cq_vis_adapter
+        except Exception:
+            pass
 
     # 构建多文件虚拟工程模块映射
     virtual_modules_map: Dict[str, str] = {}
@@ -522,14 +559,18 @@ def _run_script_worker(
         if base_name == "ocp_vscode":
             return ocp_adapter
 
-        # 2. 如果是工程虚拟文件模块
+        # 2. 优先捕获 cadquery.vis
+        if name == "cadquery.vis" or (base_name == "cadquery" and len(name.split(".")) > 1 and name.split(".")[1] == "vis"):
+            return cq_vis_adapter
+
+        # 3. 如果是工程虚拟文件模块
         if name in virtual_modules_map or name in virtual_packages or base_name in virtual_modules_map or base_name in virtual_packages:
             target_mod = _load_virtual_module(name)
             if fromlist:
                 return target_mod
             return _load_virtual_module(base_name)
 
-        # 3. 校验白名单标准/第三方库
+        # 4. 校验白名单标准/第三方库
         if base_name in ALLOWED_MODULES:
             return __import__(name, globals, locals, fromlist, level)
 
@@ -559,6 +600,7 @@ def _run_script_worker(
         "Turtle3D": Turtle3D,
         "insert": getattr(b3d, "insert", getattr(b3d, "add", None)),
         "ocp_vscode": ocp_adapter,
+        "vis": cq_vis_adapter,
         **b3d_symbols,
         **custom_cq_funcs,
     }

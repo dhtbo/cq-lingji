@@ -5,7 +5,22 @@ CAD 几何数据序列化模块
 """
 import json
 import logging
+import sys
+import types
 from typing import Any, Dict, Optional
+
+# 垫片注入：兼容 novtk 版本的 cadquery-ocp 环境，避免因缺失 VTK 扩展导致 cadquery 导入失败
+if "OCP.IVtkOCC" not in sys.modules:
+    _mod_occ = types.ModuleType("OCP.IVtkOCC")
+    _mod_occ.IVtkOCC_Shape = type("IVtkOCC_Shape", (), {})
+    _mod_occ.IVtkOCC_ShapeMesher = type("IVtkOCC_ShapeMesher", (), {})
+    sys.modules["OCP.IVtkOCC"] = _mod_occ
+
+if "OCP.IVtkVTK" not in sys.modules:
+    _mod_vtk = types.ModuleType("OCP.IVtkVTK")
+    _mod_vtk.IVtkVTK_ShapeData = type("IVtkVTK_ShapeData", (), {})
+    sys.modules["OCP.IVtkVTK"] = _mod_vtk
+
 try:
     import cadquery as cq
 except Exception:
