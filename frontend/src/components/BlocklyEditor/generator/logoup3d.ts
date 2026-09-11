@@ -23,6 +23,164 @@ export function registerLogoUp3DGenerator() {
     return "pop()\n";
   };
 
+  pythonGenerator.forBlock["logoup_repeat"] = function (block) {
+    const times = pythonGenerator.valueToCode(block, "TIMES", Order.NONE) || "4";
+    const branch = pythonGenerator.statementToCode(block, "DO") || "    pass\n";
+    return `for _ in range(${times}):\n${branch}`;
+  };
+
+  pythonGenerator.forBlock["logoup_if"] = function (block) {
+    const condition = pythonGenerator.valueToCode(block, "CONDITION", Order.NONE) || "True";
+    const branch = pythonGenerator.statementToCode(block, "DO") || "    pass\n";
+    return `if ${condition}:\n${branch}`;
+  };
+
+  pythonGenerator.forBlock["logoup_if_else"] = function (block) {
+    const condition = pythonGenerator.valueToCode(block, "CONDITION", Order.NONE) || "True";
+    const branch = pythonGenerator.statementToCode(block, "DO") || "    pass\n";
+    const elseBranch = pythonGenerator.statementToCode(block, "ELSE") || "    pass\n";
+    return `if ${condition}:\n${branch}else:\n${elseBranch}`;
+  };
+
+  pythonGenerator.forBlock["logoup_def_func"] = function (block) {
+    const name = block.getFieldValue("NAME") || "my_func";
+    const params = block.getFieldValue("PARAMS") || "";
+    const branch = pythonGenerator.statementToCode(block, "DO") || "    pass\n";
+    return `def ${name}(${params}):\n${branch}\n`;
+  };
+
+  pythonGenerator.forBlock["logoup_call_func_stmt"] = function (block) {
+    const name = block.getFieldValue("NAME") || "my_func";
+    const args = block.getFieldValue("ARGS") || "";
+    return `${name}(${args})\n`;
+  };
+
+  pythonGenerator.forBlock["logoup_call_func_expr"] = function (block) {
+    const name = block.getFieldValue("NAME") || "my_func";
+    const args = block.getFieldValue("ARGS") || "";
+    return [`${name}(${args})`, Order.FUNCTION_CALL];
+  };
+
+  pythonGenerator.forBlock["logoup_def_var"] = function (block) {
+    const varName = block.getFieldValue("VAR") || "x";
+    const val = pythonGenerator.valueToCode(block, "VALUE", Order.NONE) || "0";
+    return `${varName} = ${val}\n`;
+  };
+
+  pythonGenerator.forBlock["logoup_set_var"] = function (block) {
+    const varName = block.getFieldValue("VAR") || "x";
+    const val = pythonGenerator.valueToCode(block, "VALUE", Order.NONE) || "0";
+    return `${varName} = ${val}\n`;
+  };
+
+  pythonGenerator.forBlock["logoup_return_val"] = function (block) {
+    const val = pythonGenerator.valueToCode(block, "VALUE", Order.NONE) || "None";
+    return `return ${val}\n`;
+  };
+
+  pythonGenerator.forBlock["logoup_return"] = function () {
+    return "return\n";
+  };
+
+  pythonGenerator.forBlock["logoup_bool_var"] = function (block) {
+    const varName = block.getFieldValue("VAR") || "flag";
+    return [varName, Order.ATOMIC];
+  };
+
+  pythonGenerator.forBlock["logoup_true"] = function () {
+    return ["True", Order.ATOMIC];
+  };
+
+  pythonGenerator.forBlock["logoup_false"] = function () {
+    return ["False", Order.ATOMIC];
+  };
+
+  // ==========================================
+  // 数学运算
+  // ==========================================
+  pythonGenerator.forBlock["logoup_add"] = function (block) {
+    const a = pythonGenerator.valueToCode(block, "A", Order.ADDITIVE) || "0";
+    const b = pythonGenerator.valueToCode(block, "B", Order.ADDITIVE) || "0";
+    return [`${a} + ${b}`, Order.ADDITIVE];
+  };
+
+  pythonGenerator.forBlock["logoup_sub"] = function (block) {
+    const a = pythonGenerator.valueToCode(block, "A", Order.ADDITIVE) || "0";
+    const b = pythonGenerator.valueToCode(block, "B", Order.ADDITIVE) || "0";
+    return [`${a} - ${b}`, Order.ADDITIVE];
+  };
+
+  pythonGenerator.forBlock["logoup_mul"] = function (block) {
+    const a = pythonGenerator.valueToCode(block, "A", Order.MULTIPLICATIVE) || "1";
+    const b = pythonGenerator.valueToCode(block, "B", Order.MULTIPLICATIVE) || "1";
+    return [`${a} * ${b}`, Order.MULTIPLICATIVE];
+  };
+
+  pythonGenerator.forBlock["logoup_div"] = function (block) {
+    const a = pythonGenerator.valueToCode(block, "A", Order.MULTIPLICATIVE) || "1";
+    const b = pythonGenerator.valueToCode(block, "B", Order.MULTIPLICATIVE) || "1";
+    return [`${a} / ${b}`, Order.MULTIPLICATIVE];
+  };
+
+  pythonGenerator.forBlock["logoup_mod"] = function (block) {
+    const a = pythonGenerator.valueToCode(block, "A", Order.MULTIPLICATIVE) || "0";
+    const b = pythonGenerator.valueToCode(block, "B", Order.MULTIPLICATIVE) || "1";
+    return [`${a} % ${b}`, Order.MULTIPLICATIVE];
+  };
+
+  pythonGenerator.forBlock["logoup_lt"] = function (block) {
+    const a = pythonGenerator.valueToCode(block, "A", Order.RELATIONAL) || "0";
+    const b = pythonGenerator.valueToCode(block, "B", Order.RELATIONAL) || "0";
+    return [`${a} < ${b}`, Order.RELATIONAL];
+  };
+
+  pythonGenerator.forBlock["logoup_lte"] = function (block) {
+    const a = pythonGenerator.valueToCode(block, "A", Order.RELATIONAL) || "0";
+    const b = pythonGenerator.valueToCode(block, "B", Order.RELATIONAL) || "0";
+    return [`${a} <= ${b}`, Order.RELATIONAL];
+  };
+
+  pythonGenerator.forBlock["logoup_eq"] = function (block) {
+    const a = pythonGenerator.valueToCode(block, "A", Order.RELATIONAL) || "0";
+    const b = pythonGenerator.valueToCode(block, "B", Order.RELATIONAL) || "0";
+    return [`${a} == ${b}`, Order.RELATIONAL];
+  };
+
+  pythonGenerator.forBlock["logoup_neq"] = function (block) {
+    const a = pythonGenerator.valueToCode(block, "A", Order.RELATIONAL) || "0";
+    const b = pythonGenerator.valueToCode(block, "B", Order.RELATIONAL) || "0";
+    return [`${a} != ${b}`, Order.RELATIONAL];
+  };
+
+  pythonGenerator.forBlock["logoup_gte"] = function (block) {
+    const a = pythonGenerator.valueToCode(block, "A", Order.RELATIONAL) || "0";
+    const b = pythonGenerator.valueToCode(block, "B", Order.RELATIONAL) || "0";
+    return [`${a} >= ${b}`, Order.RELATIONAL];
+  };
+
+  pythonGenerator.forBlock["logoup_gt"] = function (block) {
+    const a = pythonGenerator.valueToCode(block, "A", Order.RELATIONAL) || "0";
+    const b = pythonGenerator.valueToCode(block, "B", Order.RELATIONAL) || "0";
+    return [`${a} > ${b}`, Order.RELATIONAL];
+  };
+
+  pythonGenerator.forBlock["logoup_and"] = function (block) {
+    const a = pythonGenerator.valueToCode(block, "A", Order.LOGICAL_AND) || "True";
+    const b = pythonGenerator.valueToCode(block, "B", Order.LOGICAL_AND) || "True";
+    return [`${a} and ${b}`, Order.LOGICAL_AND];
+  };
+
+  pythonGenerator.forBlock["logoup_or"] = function (block) {
+    const a = pythonGenerator.valueToCode(block, "A", Order.LOGICAL_OR) || "False";
+    const b = pythonGenerator.valueToCode(block, "B", Order.LOGICAL_OR) || "False";
+    return [`${a} or ${b}`, Order.LOGICAL_OR];
+  };
+
+  pythonGenerator.forBlock["logoup_not"] = function (block) {
+    const bool = pythonGenerator.valueToCode(block, "BOOL", Order.LOGICAL_NOT) || "False";
+    return [`not ${bool}`, Order.LOGICAL_NOT];
+  };
+
   // ==========================================
   // 平面绘图
   // ==========================================

@@ -26,7 +26,8 @@ export const LOGOUP_COLORS = {
   DRAWING_3D: "#f43f5e",    // 珊瑚红 - 三维绘图 (UP, BODY, COLOR, YAW, PITCH, ROLL, SUBTRACT)
   ADVANCED_3D: "#8b5cf6",   // 梦幻紫 - 三维进阶 (MOVETO, EXTRUDE, CEXTRUDE, PYRAMID, CAVE)
   COMPONENTS_3D: "#7c3aed", // 深紫 - 三维构件 (长方体, 棱锥, 圆环, 圆柱)
-  CONTROL: "#f59e0b",       // 暖橙 - 控制流程 (START, PUSH, POP)
+  CONTROL: "#ffab19",       // 暖橙亮黄 - 控制流程 (START, PUSH, POP, 重复, 条件, 函数, 变量)
+  MATH: "#59c059",          // 鲜明翠绿 - 数学运算与逻辑 (加减乘除, 比较, 逻辑与或非, 余数)
 };
 
 export const CQ_TYPES = {

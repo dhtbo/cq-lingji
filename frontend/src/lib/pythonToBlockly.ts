@@ -45,7 +45,14 @@ export function parseExprToBlockDef(expr: string): ParsedBlockDef | null {
     }
   }
 
-  // 2. 纯数字判断 (包括正负整数、浮点数)
+  // 2. 布尔常量与纯数字判断
+  if (s === "True") {
+    return { type: "logoup_true", fields: {} };
+  }
+  if (s === "False") {
+    return { type: "logoup_false", fields: {} };
+  }
+
   if (/^-?\d+(?:\.\d+)?$/.test(s)) {
     return {
       type: "math_number",
@@ -53,7 +60,33 @@ export function parseExprToBlockDef(expr: string): ParsedBlockDef | null {
     };
   }
 
-  // 3. 纯合法 Python 标识符 (变量引用)
+  // 3. 逻辑非 (not ...)
+  if (s.startsWith("not ") && s.length > 4) {
+    const subDef = parseExprToBlockDef(s.slice(4).trim());
+    if (subDef) {
+      return {
+        type: "logoup_not",
+        fields: {},
+        inputs: { BOOL: subDef },
+      };
+    }
+  }
+
+  // 4. 函数调用表达式 (如 my_func(a, b))
+  const fnMatch = s.match(/^([a-zA-Z_]\w*)\s*\((.*)\)$/);
+  if (fnMatch) {
+    const fnName = fnMatch[1];
+    const argsStr = fnMatch[2].trim();
+    // 排除特定非函数标识
+    if (!["range", "len"].includes(fnName)) {
+      return {
+        type: "logoup_call_func_expr",
+        fields: { NAME: fnName, ARGS: argsStr },
+      };
+    }
+  }
+
+  // 5. 纯合法 Python 标识符 (变量引用)
   if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(s)) {
     return {
       type: "b3d_var_get",
@@ -61,18 +94,33 @@ export function parseExprToBlockDef(expr: string): ParsedBlockDef | null {
     };
   }
 
-  // 4. 操作符优先级分层拆分 (从低优先级到高优先级寻找顶层运算符)
-  const tiers = [
+  // 6. 操作符优先级分层拆分 (从低优先级到高优先级寻找顶层运算符)
+  const tiers: { op: string; blockType: string; blockOp?: string; isWord?: boolean }[][] = [
     [
-      { op: "+", blockOp: "ADD" },
-      { op: "-", blockOp: "MINUS" },
+      { op: " or ", blockType: "logoup_or", isWord: true },
     ],
     [
-      { op: "*", blockOp: "MULTIPLY" },
-      { op: "/", blockOp: "DIVIDE" },
+      { op: " and ", blockType: "logoup_and", isWord: true },
     ],
     [
-      { op: "**", blockOp: "POWER" },
+      { op: "==", blockType: "logoup_eq" },
+      { op: "!=", blockType: "logoup_neq" },
+      { op: "<=", blockType: "logoup_lte" },
+      { op: ">=", blockType: "logoup_gte" },
+      { op: "<", blockType: "logoup_lt" },
+      { op: ">", blockType: "logoup_gt" },
+    ],
+    [
+      { op: "+", blockType: "logoup_add", blockOp: "ADD" },
+      { op: "-", blockType: "logoup_sub", blockOp: "MINUS" },
+    ],
+    [
+      { op: "*", blockType: "logoup_mul", blockOp: "MULTIPLY" },
+      { op: "/", blockType: "logoup_div", blockOp: "DIVIDE" },
+      { op: "%", blockType: "logoup_mod" },
+    ],
+    [
+      { op: "**", blockType: "math_arithmetic", blockOp: "POWER" },
     ],
   ];
 
@@ -84,8 +132,24 @@ export function parseExprToBlockDef(expr: string): ParsedBlockDef | null {
       if (ch === ")") depth++;
       else if (ch === "(") depth--;
       else if (depth === 0) {
-        for (const { op, blockOp } of tier) {
-          if (op === "**") {
+        for (const item of tier) {
+          const { op, blockType, blockOp, isWord } = item;
+          if (isWord) {
+            const opLen = op.length;
+            if (i >= opLen - 1 && s.slice(i - opLen + 1, i + 1) === op) {
+              const leftStr = s.slice(0, i - opLen + 1).trim();
+              const rightStr = s.slice(i + 1).trim();
+              const leftDef = parseExprToBlockDef(leftStr);
+              const rightDef = parseExprToBlockDef(rightStr);
+              if (leftDef && rightDef) {
+                return {
+                  type: blockType,
+                  fields: {},
+                  inputs: { A: leftDef, B: rightDef },
+                };
+              }
+            }
+          } else if (op === "**") {
             if (s.slice(i, i + 2) === "**") {
               const leftStr = s.slice(0, i).trim();
               const rightStr = s.slice(i + 2).trim();
@@ -93,8 +157,8 @@ export function parseExprToBlockDef(expr: string): ParsedBlockDef | null {
               const rightDef = parseExprToBlockDef(rightStr);
               if (leftDef && rightDef) {
                 return {
-                  type: "math_arithmetic",
-                  fields: { OP: blockOp },
+                  type: blockType,
+                  fields: blockOp ? { OP: blockOp } : {},
                   inputs: { A: leftDef, B: rightDef },
                 };
               }
@@ -102,9 +166,32 @@ export function parseExprToBlockDef(expr: string): ParsedBlockDef | null {
           } else if (op === "*" && (s.slice(i, i + 2) === "**" || (i > 0 && s[i - 1] === "*"))) {
             // 跳过 **
             continue;
-          } else if (s[i] === op) {
+          } else if (op.length === 2 && s.slice(i - 1, i + 1) === op) {
+            // 双字符操作符如 ==, !=, <=, >=
+            const leftStr = s.slice(0, i - 1).trim();
+            const rightStr = s.slice(i + 1).trim();
+            const leftDef = parseExprToBlockDef(leftStr);
+            const rightDef = parseExprToBlockDef(rightStr);
+            if (leftDef && rightDef) {
+              return {
+                type: blockType,
+                fields: {},
+                inputs: { A: leftDef, B: rightDef },
+              };
+            }
+          } else if (op.length === 1 && s[i] === op) {
+            // 排除被双字符操作符占据的单字符
+            const prevChar = i > 0 ? s[i - 1] : "";
+            const nextChar = i + 1 < s.length ? s[i + 1] : "";
+            if (
+              (op === "=" && (prevChar === "!" || prevChar === "<" || prevChar === ">" || prevChar === "=" || nextChar === "=")) ||
+              (op === "<" && nextChar === "=") ||
+              (op === ">" && nextChar === "=")
+            ) {
+              continue;
+            }
             // 排除一元负号
-            if (op === "-" && (i === 0 || /[\+\-\*\/]\s*$/.test(s.slice(0, i)))) {
+            if (op === "-" && (i === 0 || /[\+\-\*\/%<>=!]\s*$/.test(s.slice(0, i)))) {
               continue;
             }
             const leftStr = s.slice(0, i).trim();
@@ -114,8 +201,8 @@ export function parseExprToBlockDef(expr: string): ParsedBlockDef | null {
               const rightDef = parseExprToBlockDef(rightStr);
               if (leftDef && rightDef) {
                 return {
-                  type: "math_arithmetic",
-                  fields: { OP: blockOp },
+                  type: blockType,
+                  fields: blockOp ? { OP: blockOp } : {},
                   inputs: { A: leftDef, B: rightDef },
                 };
               }
@@ -307,6 +394,710 @@ function extractWithBlockCall(
 }
 
 /**
+ * 去除字符串首尾的引号
+ */
+function stripQuotes(str: string): string {
+  if (!str) return "";
+  let s = str.trim();
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    return s.slice(1, -1);
+  }
+  return s;
+}
+
+/**
+ * 解析 LogoUp 专属语句并转换为对应的积木树节点
+ */
+function parseLogoUpStatement(
+  trimmed: string,
+  indent: number,
+  stack: { indent: number; block: ParsedBlockDef; isExplicitClose?: boolean }[],
+  addBlock: (b: ParsedBlockDef) => void
+): boolean {
+  // 1. 开始帽子积木
+  if (trimmed.startsWith("# 🏁 开始")) {
+    addBlock({ type: "logoup_start", fields: {} });
+    return true;
+  }
+
+  // 2. 控制流 - 循环 for _ in range(N):
+  const repeatMatch = trimmed.match(/^for\s+(?:_|[a-zA-Z_]\w*)\s+in\s+range\((.*?)\)\s*:/);
+  if (repeatMatch) {
+    const timesExpr = repeatMatch[1].trim();
+    const valDef = parseExprToBlockDef(timesExpr) || { type: "math_number", fields: { NUM: 4 } };
+    const block: ParsedBlockDef = {
+      type: "logoup_repeat",
+      fields: {},
+      inputs: { TIMES: valDef },
+      children: [],
+    };
+    addBlock(block);
+    stack.push({ indent, block });
+    return true;
+  }
+
+  // 3. 控制流 - 条件 if <cond>:
+  const ifMatch = trimmed.match(/^if\s+(.*?)\s*:/);
+  if (ifMatch && !trimmed.startsWith("if __name__")) {
+    const condExpr = ifMatch[1].trim();
+    const condDef = parseExprToBlockDef(condExpr);
+    const block: ParsedBlockDef = {
+      type: "logoup_if",
+      fields: {},
+      inputs: condDef ? { CONDITION: condDef } : undefined,
+      children: [],
+    };
+    addBlock(block);
+    stack.push({ indent, block });
+    return true;
+  }
+
+  // 4. 控制流 - 函数定义 def my_func(params):
+  const defFuncMatch = trimmed.match(/^def\s+([a-zA-Z_]\w*)\s*\((.*?)\)\s*:/);
+  if (defFuncMatch) {
+    const fnName = defFuncMatch[1].trim();
+    const fnParams = defFuncMatch[2].trim();
+    const block: ParsedBlockDef = {
+      type: "logoup_def_func",
+      fields: { NAME: fnName, PARAMS: fnParams },
+      children: [],
+    };
+    addBlock(block);
+    stack.push({ indent, block });
+    return true;
+  }
+
+  // 5. 控制流 - push() / pop()
+  if (trimmed === "push()") {
+    addBlock({ type: "logoup_push", fields: {} });
+    return true;
+  }
+  if (trimmed === "pop()") {
+    addBlock({ type: "logoup_pop", fields: {} });
+    return true;
+  }
+
+  // 6. 控制流 - return
+  if (trimmed === "return") {
+    addBlock({ type: "logoup_return", fields: {} });
+    return true;
+  }
+  const returnValMatch = trimmed.match(/^return\s+(.+)$/);
+  if (returnValMatch) {
+    const valDef = parseExprToBlockDef(returnValMatch[1].trim());
+    addBlock({
+      type: "logoup_return_val",
+      fields: {},
+      inputs: valDef ? { VALUE: valDef } : undefined,
+    });
+    return true;
+  }
+
+  // 7. 三维构件与三维绘图 (小写调用)
+  // box(l, w, h)
+  const boxCall = extractFunctionCall(trimmed, "box");
+  if (boxCall) {
+    const args = splitTopLevelArgs(boxCall.argsStr);
+    addBlock({
+      type: "logoup_box",
+      fields: {
+        LENGTH: Number(args[0]) || 20,
+        WIDTH: Number(args[1]) || 20,
+        HEIGHT: Number(args[2]) || 10,
+      },
+    });
+    return true;
+  }
+
+  // cylinder(r, h)
+  const cylCall = extractFunctionCall(trimmed, "cylinder");
+  if (cylCall) {
+    const args = splitTopLevelArgs(cylCall.argsStr);
+    addBlock({
+      type: "logoup_cylinder",
+      fields: {
+        RADIUS: Number(args[0]) || 10,
+        HEIGHT: Number(args[1]) || 20,
+      },
+    });
+    return true;
+  }
+
+  // sphere(r)
+  const sphCall = extractFunctionCall(trimmed, "sphere");
+  if (sphCall) {
+    const args = splitTopLevelArgs(sphCall.argsStr);
+    addBlock({
+      type: "logoup_sphere",
+      fields: { RADIUS: Number(args[0]) || 10 },
+    });
+    return true;
+  }
+
+  // pyramid_solid(sides, r, h)
+  const pyrSolidCall = extractFunctionCall(trimmed, "pyramid_solid");
+  if (pyrSolidCall) {
+    const args = splitTopLevelArgs(pyrSolidCall.argsStr);
+    addBlock({
+      type: "logoup_pyramid_solid",
+      fields: {
+        SIDES: Number(args[0]) || 4,
+        RADIUS: Number(args[1]) || 15,
+        HEIGHT: Number(args[2]) || 25,
+      },
+    });
+    return true;
+  }
+
+  // torus(r1, r2)
+  const torusCall = extractFunctionCall(trimmed, "torus");
+  if (torusCall) {
+    const args = splitTopLevelArgs(torusCall.argsStr);
+    addBlock({
+      type: "logoup_torus",
+      fields: {
+        MAJOR_RADIUS: Number(args[0]) || 20,
+        MINOR_RADIUS: Number(args[1]) || 5,
+      },
+    });
+    return true;
+  }
+
+  // rect(l, w)
+  const rectCall = extractFunctionCall(trimmed, "rect");
+  if (rectCall) {
+    const args = splitTopLevelArgs(rectCall.argsStr);
+    addBlock({
+      type: "logoup_rect",
+      fields: {
+        LENGTH: Number(args[0]) || 20,
+        WIDTH: Number(args[1]) || 20,
+      },
+    });
+    return true;
+  }
+
+  // square(s)
+  const sqCall = extractFunctionCall(trimmed, "square");
+  if (sqCall) {
+    const args = splitTopLevelArgs(sqCall.argsStr);
+    addBlock({
+      type: "logoup_square",
+      fields: { SIZE: Number(args[0]) || 20 },
+    });
+    return true;
+  }
+
+  // rounded_rect(l, w, r)
+  const rRectCall = extractFunctionCall(trimmed, "rounded_rect");
+  if (rRectCall) {
+    const args = splitTopLevelArgs(rRectCall.argsStr);
+    addBlock({
+      type: "logoup_rounded_rect",
+      fields: {
+        LENGTH: Number(args[0]) || 30,
+        WIDTH: Number(args[1]) || 20,
+        RADIUS: Number(args[2]) || 4,
+      },
+    });
+    return true;
+  }
+
+  // rounded_square(s, r)
+  const rSqCall = extractFunctionCall(trimmed, "rounded_square");
+  if (rSqCall) {
+    const args = splitTopLevelArgs(rSqCall.argsStr);
+    addBlock({
+      type: "logoup_rounded_square",
+      fields: {
+        SIZE: Number(args[0]) || 20,
+        RADIUS: Number(args[1]) || 3,
+      },
+    });
+    return true;
+  }
+
+  // circle(r) (注意必须小写)
+  if (trimmed.startsWith("circle(")) {
+    const cirCall = extractFunctionCall(trimmed, "circle");
+    if (cirCall) {
+      const args = splitTopLevelArgs(cirCall.argsStr);
+      addBlock({
+        type: "logoup_circle",
+        fields: { RADIUS: Number(args[0]) || 10 },
+      });
+      return true;
+    }
+  }
+
+  // ellipse(a, b)
+  const ellCall = extractFunctionCall(trimmed, "ellipse");
+  if (ellCall) {
+    const args = splitTopLevelArgs(ellCall.argsStr);
+    addBlock({
+      type: "logoup_ellipse",
+      fields: {
+        A: Number(args[0]) || 20,
+        B: Number(args[1]) || 10,
+      },
+    });
+    return true;
+  }
+
+  // egg(rx, ry)
+  const eggCall = extractFunctionCall(trimmed, "egg");
+  if (eggCall) {
+    const args = splitTopLevelArgs(eggCall.argsStr);
+    addBlock({
+      type: "logoup_egg",
+      fields: {
+        RX: Number(args[0]) || 12,
+        RY: Number(args[1]) || 18,
+      },
+    });
+    return true;
+  }
+
+  // polygon(sides, r)
+  const polyCall = extractFunctionCall(trimmed, "polygon");
+  if (polyCall) {
+    const args = splitTopLevelArgs(polyCall.argsStr);
+    addBlock({
+      type: "logoup_polygon",
+      fields: {
+        SIDES: Number(args[0]) || 6,
+        RADIUS: Number(args[1]) || 15,
+      },
+    });
+    return true;
+  }
+
+  // star(p, r)
+  const starCall = extractFunctionCall(trimmed, "star");
+  if (starCall) {
+    const args = splitTopLevelArgs(starCall.argsStr);
+    addBlock({
+      type: "logoup_star",
+      fields: {
+        POINTS: Number(args[0]) || 5,
+        RADIUS: Number(args[1]) || 15,
+      },
+    });
+    return true;
+  }
+
+  // five_star(r)
+  const fStarCall = extractFunctionCall(trimmed, "five_star");
+  if (fStarCall) {
+    const args = splitTopLevelArgs(fStarCall.argsStr);
+    addBlock({
+      type: "logoup_five_star",
+      fields: { RADIUS: Number(args[0]) || 15 },
+    });
+    return true;
+  }
+
+  // six_star(r)
+  const sStarCall = extractFunctionCall(trimmed, "six_star");
+  if (sStarCall) {
+    const args = splitTopLevelArgs(sStarCall.argsStr);
+    addBlock({
+      type: "logoup_six_star",
+      fields: { RADIUS: Number(args[0]) || 15 },
+    });
+    return true;
+  }
+
+  // four_star(r)
+  const fourStarCall = extractFunctionCall(trimmed, "four_star");
+  if (fourStarCall) {
+    const args = splitTopLevelArgs(fourStarCall.argsStr);
+    addBlock({
+      type: "logoup_four_star",
+      fields: { RADIUS: Number(args[0]) || 15 },
+    });
+    return true;
+  }
+
+  // up(d)
+  const upCall = extractFunctionCall(trimmed, "up");
+  if (upCall) {
+    const args = splitTopLevelArgs(upCall.argsStr);
+    addBlock({
+      type: "logoup_up",
+      fields: { DISTANCE: Number(args[0]) || 10 },
+    });
+    return true;
+  }
+
+  // extrude(h)
+  const extrudeCall = extractFunctionCall(trimmed, "extrude");
+  if (extrudeCall) {
+    const args = splitTopLevelArgs(extrudeCall.argsStr);
+    if (args.length <= 1) {
+      addBlock({
+        type: "logoup_extrude",
+        fields: { HEIGHT: Number(args[0]) || 10 },
+      });
+      return true;
+    }
+  }
+
+  // cextrude(h)
+  const cextrudeCall = extractFunctionCall(trimmed, "cextrude");
+  if (cextrudeCall) {
+    const args = splitTopLevelArgs(cextrudeCall.argsStr);
+    addBlock({
+      type: "logoup_cextrude",
+      fields: { HEIGHT: Number(args[0]) || 10 },
+    });
+    return true;
+  }
+
+  // pyramid(h)
+  const pyrCall = extractFunctionCall(trimmed, "pyramid");
+  if (pyrCall) {
+    const args = splitTopLevelArgs(pyrCall.argsStr);
+    addBlock({
+      type: "logoup_pyramid",
+      fields: { HEIGHT: Number(args[0]) || 15 },
+    });
+    return true;
+  }
+
+  // cave(d)
+  const caveCall = extractFunctionCall(trimmed, "cave");
+  if (caveCall) {
+    const args = splitTopLevelArgs(caveCall.argsStr);
+    addBlock({
+      type: "logoup_cave",
+      fields: { DEPTH: Number(args[0]) || 5 },
+    });
+    return true;
+  }
+
+  // body()
+  if (trimmed === "body()") {
+    addBlock({ type: "logoup_body", fields: {} });
+    return true;
+  }
+
+  // reset()
+  if (trimmed === "reset()") {
+    addBlock({ type: "logoup_reset", fields: {} });
+    return true;
+  }
+
+  // done()
+  if (trimmed === "done()") {
+    addBlock({ type: "logoup_done_3d", fields: {} });
+    return true;
+  }
+
+  // color(c)
+  const colorCall = extractFunctionCall(trimmed, "color");
+  if (colorCall) {
+    const args = splitTopLevelArgs(colorCall.argsStr);
+    addBlock({
+      type: "logoup_color",
+      fields: { COLOR: stripQuotes(args[0]) || "#10B981" },
+    });
+    return true;
+  }
+
+  // scale(f)
+  const scaleCall = extractFunctionCall(trimmed, "scale");
+  if (scaleCall) {
+    const args = splitTopLevelArgs(scaleCall.argsStr);
+    addBlock({
+      type: "logoup_scale",
+      fields: { FACTOR: Number(args[0]) || 1.5 },
+    });
+    return true;
+  }
+
+  // yaw(a)
+  const yawCall = extractFunctionCall(trimmed, "yaw");
+  if (yawCall) {
+    const args = splitTopLevelArgs(yawCall.argsStr);
+    addBlock({
+      type: "logoup_yaw",
+      fields: { ANGLE: Number(args[0]) || 45 },
+    });
+    return true;
+  }
+
+  // pitch(a)
+  const pitchCall = extractFunctionCall(trimmed, "pitch");
+  if (pitchCall) {
+    const args = splitTopLevelArgs(pitchCall.argsStr);
+    addBlock({
+      type: "logoup_pitch",
+      fields: { ANGLE: Number(args[0]) || 45 },
+    });
+    return true;
+  }
+
+  // roll(a)
+  const rollCall = extractFunctionCall(trimmed, "roll");
+  if (rollCall) {
+    const args = splitTopLevelArgs(rollCall.argsStr);
+    addBlock({
+      type: "logoup_roll",
+      fields: { ANGLE: Number(args[0]) || 45 },
+    });
+    return true;
+  }
+
+  // jump(d)
+  const jumpCall = extractFunctionCall(trimmed, "jump");
+  if (jumpCall) {
+    const args = splitTopLevelArgs(jumpCall.argsStr);
+    addBlock({
+      type: "logoup_jump",
+      fields: { DISTANCE: Number(args[0]) || 10 },
+    });
+    return true;
+  }
+
+  // move(dx, dy, dz)
+  const moveCall = extractFunctionCall(trimmed, "move");
+  if (moveCall) {
+    const args = splitTopLevelArgs(moveCall.argsStr);
+    addBlock({
+      type: "logoup_move",
+      fields: {
+        DX: Number(args[0]) || 10,
+        DY: Number(args[1]) || 0,
+        DZ: Number(args[2]) || 0,
+      },
+    });
+    return true;
+  }
+
+  // shift(dx, dy)
+  const shiftCall = extractFunctionCall(trimmed, "shift");
+  if (shiftCall) {
+    const args = splitTopLevelArgs(shiftCall.argsStr);
+    addBlock({
+      type: "logoup_shift",
+      fields: {
+        DX: Number(args[0]) || 10,
+        DY: Number(args[1]) || 0,
+      },
+    });
+    return true;
+  }
+
+  // subtract(mode)
+  const subCall = extractFunctionCall(trimmed, "subtract");
+  if (subCall) {
+    const args = splitTopLevelArgs(subCall.argsStr);
+    addBlock({
+      type: "logoup_subtract",
+      fields: { MODE: /true/i.test(args[0]) ? "ENABLE" : "DISABLE" },
+    });
+    return true;
+  }
+
+  // moveto(x, y, z)
+  const movetoCall = extractFunctionCall(trimmed, "moveto");
+  if (movetoCall) {
+    const args = splitTopLevelArgs(movetoCall.argsStr);
+    addBlock({
+      type: "logoup_moveto",
+      fields: {
+        X: Number(args[0]) || 0,
+        Y: Number(args[1]) || 0,
+        Z: Number(args[2]) || 0,
+      },
+    });
+    return true;
+  }
+
+  // go(d)
+  const goCall = extractFunctionCall(trimmed, "go");
+  if (goCall) {
+    const args = splitTopLevelArgs(goCall.argsStr);
+    addBlock({
+      type: "logoup_go",
+      fields: { DISTANCE: Number(args[0]) || 20 },
+    });
+    return true;
+  }
+
+  // turn(a)
+  const turnCall = extractFunctionCall(trimmed, "turn");
+  if (turnCall) {
+    const args = splitTopLevelArgs(turnCall.argsStr);
+    addBlock({
+      type: "logoup_turn",
+      fields: { ANGLE: Number(args[0]) || 90 },
+    });
+    return true;
+  }
+
+  // turn_left(a)
+  const turnLCall = extractFunctionCall(trimmed, "turn_left");
+  if (turnLCall) {
+    const args = splitTopLevelArgs(turnLCall.argsStr);
+    addBlock({
+      type: "logoup_turn_left",
+      fields: { ANGLE: Number(args[0]) || 90 },
+    });
+    return true;
+  }
+
+  // draw()
+  if (trimmed === "draw()") {
+    addBlock({ type: "logoup_draw", fields: {} });
+    return true;
+  }
+
+  // fill()
+  if (trimmed === "fill()") {
+    addBlock({ type: "logoup_fill", fields: {} });
+    return true;
+  }
+
+  // width(w)
+  const widthCall = extractFunctionCall(trimmed, "width");
+  if (widthCall) {
+    const args = splitTopLevelArgs(widthCall.argsStr);
+    addBlock({
+      type: "logoup_width",
+      fields: { WIDTH: Number(args[0]) || 2 },
+    });
+    return true;
+  }
+
+  // clear()
+  if (trimmed === "clear()") {
+    addBlock({ type: "logoup_clear", fields: {} });
+    return true;
+  }
+
+  // home()
+  if (trimmed === "home()") {
+    addBlock({ type: "logoup_home", fields: {} });
+    return true;
+  }
+
+  // close()
+  if (trimmed === "close()") {
+    addBlock({ type: "logoup_close", fields: {} });
+    return true;
+  }
+
+  // offset_path(a)
+  const offCall = extractFunctionCall(trimmed, "offset_path");
+  if (offCall) {
+    const args = splitTopLevelArgs(offCall.argsStr);
+    addBlock({
+      type: "logoup_offset",
+      fields: { AMOUNT: Number(args[0]) || 2 },
+    });
+    return true;
+  }
+
+  // goto(x, y)
+  const gotoCall = extractFunctionCall(trimmed, "goto");
+  if (gotoCall) {
+    const args = splitTopLevelArgs(gotoCall.argsStr);
+    addBlock({
+      type: "logoup_goto",
+      fields: {
+        X: Number(args[0]) || 0,
+        Y: Number(args[1]) || 0,
+      },
+    });
+    return true;
+  }
+
+  // turnto(a)
+  const turntoCall = extractFunctionCall(trimmed, "turnto");
+  if (turntoCall) {
+    const args = splitTopLevelArgs(turntoCall.argsStr);
+    addBlock({
+      type: "logoup_turnto",
+      fields: { ANGLE: Number(args[0]) || 0 },
+    });
+    return true;
+  }
+
+  // setx(x)
+  const setxCall = extractFunctionCall(trimmed, "setx");
+  if (setxCall) {
+    const args = splitTopLevelArgs(setxCall.argsStr);
+    addBlock({
+      type: "logoup_setx",
+      fields: { X: Number(args[0]) || 0 },
+    });
+    return true;
+  }
+
+  // sety(y)
+  const setyCall = extractFunctionCall(trimmed, "sety");
+  if (setyCall) {
+    const args = splitTopLevelArgs(setyCall.argsStr);
+    addBlock({
+      type: "logoup_sety",
+      fields: { Y: Number(args[0]) || 0 },
+    });
+    return true;
+  }
+
+  // clear_sketch()
+  if (trimmed === "clear_sketch()") {
+    addBlock({ type: "logoup_clearsketch", fields: {} });
+    return true;
+  }
+
+  // txtstamp(...)
+  const txtCall = extractFunctionCall(trimmed, "txtstamp");
+  if (txtCall) {
+    const args = splitTopLevelArgs(txtCall.argsStr);
+    addBlock({
+      type: "logoup_txtstamp",
+      fields: { TEXT: stripQuotes(args[0]) || "LogoUp" },
+    });
+    return true;
+  }
+
+  // 8. 变量赋值 (var = expr)
+  const assign = splitTopLevelAssignment(trimmed);
+  if (assign) {
+    const varName = assign.lhs.trim();
+    if (/^[a-zA-Z_]\w*$/.test(varName) && !["part", "sk", "ln", "t"].includes(varName)) {
+      const valDef = parseExprToBlockDef(assign.rhs.trim());
+      addBlock({
+        type: "logoup_set_var",
+        fields: { VAR: varName },
+        inputs: valDef ? { VALUE: valDef } : undefined,
+      });
+      return true;
+    }
+  }
+
+  // 9. 通用自定义函数调用 (my_func(...))
+  const generalFn = trimmed.match(/^([a-zA-Z_]\w*)\s*\((.*)\)$/);
+  if (generalFn) {
+    const name = generalFn[1];
+    const argsStr = generalFn[2].trim();
+    const knownB3D = ["show", "show_object", "print", "exit"];
+    if (!knownB3D.includes(name)) {
+      addBlock({
+        type: "logoup_call_func_stmt",
+        fields: { NAME: name, ARGS: argsStr },
+      });
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * 逐行与缩进语法分析器，将 Python 代码解析为结构化积木树
  */
 export function parseBuild123dCode(code: string): ParsedBlockDef[] {
@@ -344,6 +1135,10 @@ export function parseBuild123dCode(code: string): ParsedBlockDef[] {
       trimmed === "pass" ||
       trimmed.startsWith("from build123d") ||
       trimmed.startsWith("import build123d") ||
+      trimmed.startsWith("from backend.logoup3d") ||
+      trimmed.startsWith("import backend.logoup3d") ||
+      trimmed.startsWith("from logoup3d") ||
+      trimmed.startsWith("import logoup3d") ||
       trimmed.startsWith("from ocp_vscode") ||
       trimmed.startsWith("import ocp_vscode") ||
       trimmed.startsWith("import cadquery")
@@ -380,6 +1175,11 @@ export function parseBuild123dCode(code: string): ParsedBlockDef[] {
         blocks.push(b);
       }
     };
+
+    // 0. 优先解析 LogoUp 语句体系 (控制流、2D/3D绘图构件、LogoUp 开始标志等)
+    if (parseLogoUpStatement(trimmed, indent, stack, addBlock)) {
+      continue;
+    }
 
     // 1. 注释识别
     if (trimmed.startsWith("#")) {
@@ -1559,6 +2359,12 @@ export function parseBuild123dCode(code: string): ParsedBlockDef[] {
         CODE: trimmed,
       },
     });
+  }
+
+  // 如果已经包含 LogoUp 图形积木体系，则无需额外包裹 build123d 容器
+  const hasLogoUpBlock = blocks.some((b) => b.type.startsWith("logoup_"));
+  if (hasLogoUpBlock) {
+    return blocks;
   }
 
   // 仅当包含需要 BuildPart 容器的 3D 实体/特征，且未被任何顶层容器包裹时，才自动包裹首层 BuildPart

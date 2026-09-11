@@ -52,9 +52,9 @@ export const BlocklyWorkspace: React.FC<BlocklyWorkspaceProps> = ({
       zoom: {
         controls: true,
         wheel: true,
-        startScale: 0.85,
-        maxScale: 2.0,
-        minScale: 0.4,
+        startScale: 0.72,
+        maxScale: 1.8,
+        minScale: 0.3,
         scaleSpeed: 1.1,
         pinch: true,
       },
@@ -77,41 +77,20 @@ export const BlocklyWorkspace: React.FC<BlocklyWorkspaceProps> = ({
       onWorkspaceReady(workspace);
     }
 
-    // 5. 插入默认新手 build123d 经典建模积木组合
-    const buildPart = workspace.newBlock("b3d_build_part");
-    buildPart.setFieldValue("XY", "PLANE");
-    buildPart.initSvg();
-    buildPart.render();
-    buildPart.moveTo(new Blockly.utils.Coordinate(40, 40));
+    // 5. 插入默认 LogoUp 3D 紧凑基础积木组合 (🏁 开始 + box(20, 20, 10))
+    const startBlock = workspace.newBlock("logoup_start");
+    startBlock.initSvg();
+    startBlock.render();
+    startBlock.moveTo(new Blockly.utils.Coordinate(40, 40));
 
-    const boxOp = workspace.newBlock("b3d_box");
+    const boxOp = workspace.newBlock("logoup_box");
     boxOp.setFieldValue(20, "LENGTH");
     boxOp.setFieldValue(20, "WIDTH");
     boxOp.setFieldValue(10, "HEIGHT");
-    boxOp.setFieldValue("ADD", "MODE");
     boxOp.initSvg();
     boxOp.render();
 
-    const cylOp = workspace.newBlock("b3d_cylinder");
-    cylOp.setFieldValue(6, "RADIUS");
-    cylOp.setFieldValue(18, "HEIGHT");
-    cylOp.setFieldValue("ADD", "MODE");
-    cylOp.initSvg();
-    cylOp.render();
-
-    const filletOp = workspace.newBlock("b3d_fillet");
-    filletOp.setFieldValue(1.5, "RADIUS");
-    filletOp.setFieldValue("ALL", "TARGET");
-    filletOp.initSvg();
-    filletOp.render();
-
-    // 连接积木堆到 BuildPart 的内部槽位
-    const doConnection = buildPart.getInput("DO")?.connection;
-    if (doConnection) {
-      doConnection.connect(boxOp.previousConnection);
-      boxOp.nextConnection?.connect(cylOp.previousConnection);
-      cylOp.nextConnection?.connect(filletOp.previousConnection);
-    }
+    startBlock.nextConnection?.connect(boxOp.previousConnection);
 
     // 初始生成代码
     const initialCode = workspaceToBuild123d(workspace);

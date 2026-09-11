@@ -586,7 +586,7 @@ export function workspaceToBuild123d(workspace: Blockly.Workspace): string {
   // 清洗空行并补全标准头部
   const cleanCode = rawCode.trim();
   if (!cleanCode) {
-    return `from build123d import *\n\nwith BuildPart() as part:\n    Box(20, 20, 10)\n`;
+    return "";
   }
 
   let fullCode = "";
@@ -596,8 +596,27 @@ export function workspaceToBuild123d(workspace: Blockly.Workspace): string {
     cleanCode.includes("rect(") ||
     cleanCode.includes("box(") ||
     cleanCode.includes("cylinder(") ||
+    cleanCode.includes("sphere(") ||
+    cleanCode.includes("torus(") ||
+    cleanCode.includes("polygon(") ||
+    cleanCode.includes("star(") ||
+    cleanCode.includes("five_star(") ||
+    cleanCode.includes("ellipse(") ||
+    cleanCode.includes("egg(") ||
+    cleanCode.includes("up(") ||
+    cleanCode.includes("body()") ||
+    cleanCode.includes("reset()") ||
     cleanCode.includes("push()") ||
-    cleanCode.includes("pop()");
+    cleanCode.includes("pop()") ||
+    cleanCode.includes("color(") ||
+    cleanCode.includes("yaw(") ||
+    cleanCode.includes("pitch(") ||
+    cleanCode.includes("roll(") ||
+    cleanCode.includes("move(") ||
+    cleanCode.includes("shift(") ||
+    cleanCode.includes("subtract(") ||
+    cleanCode.includes("txtstamp(") ||
+    cleanCode.includes("# 🏁 开始 LogoUp 3D");
 
   if (!cleanCode.includes("from build123d import *") && !cleanCode.includes("import build123d")) {
     fullCode += "from build123d import *\n";

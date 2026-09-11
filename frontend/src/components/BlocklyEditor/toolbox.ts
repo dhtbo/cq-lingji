@@ -15,8 +15,177 @@ export const BUILD123D_TOOLBOX = {
       colour: LOGOUP_COLORS.CONTROL,
       contents: [
         { kind: "block", type: "logoup_start" },
+        {
+          kind: "block",
+          type: "logoup_repeat",
+          inputs: {
+            TIMES: {
+              shadow: {
+                type: "math_number",
+                fields: { NUM: 4 },
+              },
+            },
+          },
+        },
+        { kind: "block", type: "logoup_if" },
+        { kind: "block", type: "logoup_if_else" },
         { kind: "block", type: "logoup_push" },
         { kind: "block", type: "logoup_pop" },
+        { kind: "block", type: "logoup_def_func" },
+        { kind: "block", type: "logoup_call_func_stmt" },
+        { kind: "block", type: "logoup_call_func_expr" },
+        {
+          kind: "block",
+          type: "logoup_def_var",
+          inputs: {
+            VALUE: {
+              shadow: {
+                type: "math_number",
+                fields: { NUM: 0 },
+              },
+            },
+          },
+        },
+        {
+          kind: "block",
+          type: "logoup_set_var",
+          inputs: {
+            VALUE: {
+              shadow: {
+                type: "math_number",
+                fields: { NUM: 10 },
+              },
+            },
+          },
+        },
+        {
+          kind: "block",
+          type: "logoup_return_val",
+          inputs: {
+            VALUE: {
+              shadow: {
+                type: "math_number",
+                fields: { NUM: 0 },
+              },
+            },
+          },
+        },
+        { kind: "block", type: "logoup_return" },
+        { kind: "block", type: "logoup_bool_var" },
+        { kind: "block", type: "logoup_true" },
+        { kind: "block", type: "logoup_false" },
+      ],
+    },
+    {
+      kind: "category",
+      name: "🔢 数学运算 (LogoUp)",
+      colour: LOGOUP_COLORS.MATH,
+      contents: [
+        {
+          kind: "block",
+          type: "math_number",
+          fields: { NUM: 10 },
+        },
+        {
+          kind: "block",
+          type: "logoup_add",
+          inputs: {
+            A: { shadow: { type: "math_number", fields: { NUM: 1 } } },
+            B: { shadow: { type: "math_number", fields: { NUM: 1 } } },
+          },
+        },
+        {
+          kind: "block",
+          type: "logoup_sub",
+          inputs: {
+            A: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+            B: { shadow: { type: "math_number", fields: { NUM: 5 } } },
+          },
+        },
+        {
+          kind: "block",
+          type: "logoup_mul",
+          inputs: {
+            A: { shadow: { type: "math_number", fields: { NUM: 3 } } },
+            B: { shadow: { type: "math_number", fields: { NUM: 4 } } },
+          },
+        },
+        {
+          kind: "block",
+          type: "logoup_div",
+          inputs: {
+            A: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+            B: { shadow: { type: "math_number", fields: { NUM: 2 } } },
+          },
+        },
+        {
+          kind: "block",
+          type: "logoup_lt",
+          inputs: {
+            A: { shadow: { type: "math_number", fields: { NUM: 1 } } },
+            B: { shadow: { type: "math_number", fields: { NUM: 2 } } },
+          },
+        },
+        {
+          kind: "block",
+          type: "logoup_lte",
+          inputs: {
+            A: { shadow: { type: "math_number", fields: { NUM: 1 } } },
+            B: { shadow: { type: "math_number", fields: { NUM: 2 } } },
+          },
+        },
+        {
+          kind: "block",
+          type: "logoup_eq",
+          inputs: {
+            A: { shadow: { type: "math_number", fields: { NUM: 1 } } },
+            B: { shadow: { type: "math_number", fields: { NUM: 1 } } },
+          },
+        },
+        {
+          kind: "block",
+          type: "logoup_neq",
+          inputs: {
+            A: { shadow: { type: "math_number", fields: { NUM: 1 } } },
+            B: { shadow: { type: "math_number", fields: { NUM: 2 } } },
+          },
+        },
+        {
+          kind: "block",
+          type: "logoup_gte",
+          inputs: {
+            A: { shadow: { type: "math_number", fields: { NUM: 2 } } },
+            B: { shadow: { type: "math_number", fields: { NUM: 1 } } },
+          },
+        },
+        {
+          kind: "block",
+          type: "logoup_gt",
+          inputs: {
+            A: { shadow: { type: "math_number", fields: { NUM: 2 } } },
+            B: { shadow: { type: "math_number", fields: { NUM: 1 } } },
+          },
+        },
+        {
+          kind: "block",
+          type: "logoup_and",
+        },
+        {
+          kind: "block",
+          type: "logoup_or",
+        },
+        {
+          kind: "block",
+          type: "logoup_not",
+        },
+        {
+          kind: "block",
+          type: "logoup_mod",
+          inputs: {
+            A: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+            B: { shadow: { type: "math_number", fields: { NUM: 3 } } },
+          },
+        },
       ],
     },
     {

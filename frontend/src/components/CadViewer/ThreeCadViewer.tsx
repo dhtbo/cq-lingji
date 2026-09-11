@@ -898,8 +898,16 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
   };
 
   useEffect(() => {
-    if (displayRef.current && meshData) {
-      renderMesh(displayRef.current, meshData);
+    if (displayRef.current?.viewer) {
+      if (meshData) {
+        renderMesh(displayRef.current, meshData);
+      } else {
+        try {
+          displayRef.current.viewer.clear();
+        } catch (e) {
+          console.error("清空 3D 视口失败:", e);
+        }
+      }
     }
   }, [meshData]);
 

@@ -357,10 +357,18 @@ export default function StudioPage() {
     [code, workspace, formatErrorMessage]
   );
 
-  // 响应防抖代码更新 (默认渲染最终完整特征状态)
+  // 响应防抖代码更新 (默认渲染最终完整特征状态，空代码时清空 3D 视口)
   useEffect(() => {
-    if (debouncedCode) {
+    if (debouncedCode && debouncedCode.trim()) {
       performRender(debouncedCode);
+    } else if (debouncedCode !== undefined && debouncedCode.trim() === "") {
+      setMeshData(null);
+      setSteps([]);
+      setCurrentStep(1);
+      setTotalSteps(1);
+      setErrorMessage(null);
+      setExecTime(null);
+      setStdout("");
     }
   }, [debouncedCode, performRender]);
 
@@ -389,9 +397,12 @@ export default function StudioPage() {
   // 积木发生改变时的回调
   const handleBlocklyCodeChange = (newCode: string) => {
     setIsSaved(false);
-    if (isLockedRef.current) {
-      setCode(newCode);
-    }
+    setCode(newCode);
+    lastBlocklyCodeRef.current = newCode;
+    setWorkspace((prev) => ({
+      ...prev,
+      root: updateFileContent(prev.root, prev.activeFilePath, newCode),
+    }));
   };
 
   // 手动在 Monaco 中编写代码时的回调
@@ -834,15 +845,13 @@ export default function StudioPage() {
         if (blocklyWorkspaceRef.current) {
           try {
             const generated = workspaceToBuild123d(blocklyWorkspaceRef.current);
-            if (generated && generated.trim()) {
-              setCode(generated);
-              lastBlocklyCodeRef.current = generated;
-              // 同步更新树节点
-              setWorkspace((prev) => ({
-                ...prev,
-                root: updateFileContent(prev.root, prev.activeFilePath, generated),
-              }));
-            }
+            setCode(generated);
+            lastBlocklyCodeRef.current = generated;
+            // 同步更新树节点
+            setWorkspace((prev) => ({
+              ...prev,
+              root: updateFileContent(prev.root, prev.activeFilePath, generated),
+            }));
           } catch (e) {
             console.warn("提取积木代码失败:", e);
           }
@@ -852,7 +861,15 @@ export default function StudioPage() {
         // 从代码模式切到积木模式：
         // 若 Monaco 中的代码与积木上次生成的代码不一致，说明用户编辑了代码，自动逆向转为积木！
         if (blocklyWorkspaceRef.current) {
-          if (code && code.trim() && code.trim() !== lastBlocklyCodeRef.current.trim()) {
+          if (!code || !code.trim()) {
+            // 代码为空，清空积木工作区
+            try {
+              Blockly.Events.disable();
+              blocklyWorkspaceRef.current.clear();
+              Blockly.Events.enable();
+              lastBlocklyCodeRef.current = "";
+            } catch {}
+          } else if (code.trim() !== lastBlocklyCodeRef.current.trim()) {
             const res = convertPythonToBlockly(code, blocklyWorkspaceRef.current);
             if (res.success) {
               lastBlocklyCodeRef.current = code;
