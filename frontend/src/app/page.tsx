@@ -272,6 +272,9 @@ export default function StudioPage() {
       if (rawMsg.includes("AttributeError")) {
         return `${rawMsg}\n\n💡 汉化提示：对象属性或方法不存在，请检查是否在正确的工作平面或实体上调用了 CadQuery API。`;
       }
+      if (rawMsg.includes("AssertionError")) {
+        return `${rawMsg}\n\n💡 汉化诊断：代码中的断言 (assert) 检验未通过！\n在 build123d 官方示例中，由于不同操作系统的几何内核计算公差微调，体积或尺寸可能与硬编码数值有细微出入（如实际约 131895 对比代码中旧值 130326）。\n建议：将 assert 语句的预期值调整为当前真实体积，或直接注释该行 assert。`;
+      }
       return rawMsg;
     },
     [settings.translateErrors]
