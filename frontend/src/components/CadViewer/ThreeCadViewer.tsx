@@ -214,7 +214,8 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
     "select" | "sketch" | "add" | "extrude" | "hole" | "fillet" | "chamfer" | "shell"
   >("select");
 
-  // 3D 视口多图层独立实时显示控制 (基准平面 · 2D草图 · 3D实体模型)
+  // 3D 视口多图层独立实时显示控制 (游标 · 基准平面 · 2D草图 · 3D实体模型)
+  const [showCursorLayer, setShowCursorLayer] = useState(true);
   const [showPlaneLayer, setShowPlaneLayer] = useState(true);
   const [showSketchLayer, setShowSketchLayer] = useState(true);
   const [showModelLayer, setShowModelLayer] = useState(true);
@@ -892,7 +893,11 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
       const camera = display.viewer.rendered?.camera?.camera || display.viewer.rendered?.camera;
       const renderer = display.viewer.rendered?.renderer;
       if (scene) {
-        updateLogoUpOverlay(scene, data.cursor_metadata || null);
+        updateLogoUpOverlay(scene, data.cursor_metadata || null, {
+          showCursor: showCursorLayer,
+          showPlane: showPlaneLayer,
+          showSketch: showSketchLayer,
+        });
         if (renderer && camera) {
           renderer.render(scene, camera);
         }
@@ -929,6 +934,25 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
       }
     }
   }, [meshData]);
+
+  // 当游标、基准面、草图显隐图层切换时，实时重绘 LogoUp 覆盖层
+  useEffect(() => {
+    if (displayRef.current?.viewer && meshData) {
+      const scene = displayRef.current.viewer.rendered?.scene;
+      const camera = displayRef.current.viewer.rendered?.camera?.camera || displayRef.current.viewer.rendered?.camera;
+      const renderer = displayRef.current.viewer.rendered?.renderer;
+      if (scene) {
+        updateLogoUpOverlay(scene, meshData.cursor_metadata || null, {
+          showCursor: showCursorLayer,
+          showPlane: showPlaneLayer,
+          showSketch: showSketchLayer,
+        });
+        if (renderer && camera) {
+          renderer.render(scene, camera);
+        }
+      }
+    }
+  }, [showCursorLayer, showPlaneLayer, showSketchLayer]);
 
   // 时间旅行自动播放循环
   useEffect(() => {
@@ -1358,70 +1382,33 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
           <span className="text-[10px] text-emerald-500 font-mono font-normal px-1.5 py-0.2 bg-emerald-500/10 border border-emerald-500/20 rounded hidden md:inline-block">
             B-Rep Active
           </span>
-
-          {/* 1/2/3 选点/线/面模式快捷切换 */}
-          <div
-            className={`flex items-center ${
-              theme === "light" ? "bg-[#f3f4f6] border-[#e5e7eb]" : "bg-[#21262d] border-[#30363d]"
-            } rounded-md p-0.5 border text-[11px] ml-1`}
-          >
-            <button
-              onClick={() => setPickTab("vertex")}
-              className={`px-1.5 py-0.5 rounded font-medium transition flex items-center gap-1 ${
-                pickTab === "vertex"
-                  ? "bg-amber-600 text-white shadow-sm font-semibold"
-                  : theme === "light"
-                  ? "text-gray-600 hover:text-gray-900"
-                  : "text-gray-400 hover:text-gray-200"
-              }`}
-              title="按快捷键 [1]: 选点 (Vertex)"
-            >
-              <span className="font-mono text-[9px] opacity-70">1</span>
-              <span>点</span>
-            </button>
-            <button
-              onClick={() => setPickTab("edge")}
-              className={`px-1.5 py-0.5 rounded font-medium transition flex items-center gap-1 ${
-                pickTab === "edge"
-                  ? "bg-emerald-600 text-white shadow-sm font-semibold"
-                  : theme === "light"
-                  ? "text-gray-600 hover:text-gray-900"
-                  : "text-gray-400 hover:text-gray-200"
-              }`}
-              title="按快捷键 [2]: 选边 (Edge)"
-            >
-              <span className="font-mono text-[9px] opacity-70">2</span>
-              <span>线</span>
-            </button>
-            <button
-              onClick={() => setPickTab("face")}
-              className={`px-1.5 py-0.5 rounded font-medium transition flex items-center gap-1 ${
-                pickTab === "face"
-                  ? "bg-blue-600 text-white shadow-sm font-semibold"
-                  : theme === "light"
-                  ? "text-gray-600 hover:text-gray-900"
-                  : "text-gray-400 hover:text-gray-200"
-              }`}
-              title="按快捷键 [3]: 选面 (Face)"
-            >
-              <span className="font-mono text-[9px] opacity-70">3</span>
-              <span>面</span>
-            </button>
-          </div>
         </div>
 
-        {/* 3D 视图图层实时显示控制：基准平面 · 2D草图 · 3D模型 */}
+        {/* 3D 视图图层实时显示控制：游标 · 基准平面 · 2D草图 · 3D模型 */}
         <div
           className={`flex items-center ${
             theme === "light" ? "bg-[#f3f4f6] border-[#e5e7eb]" : "bg-[#21262d] border-[#30363d]"
           } rounded-lg p-0.5 border text-[11px]`}
         >
           <button
+            onClick={() => setShowCursorLayer(!showCursorLayer)}
+            title={showCursorLayer ? "点击隐藏三维游标与方向指示" : "点击显示三维游标与方向指示"}
+            className={`px-1.5 py-0.5 rounded font-medium transition flex items-center gap-1 ${
+              showCursorLayer
+                ? "bg-teal-600 text-white shadow-sm font-semibold"
+                : theme === "light"
+                ? "text-gray-500 hover:text-gray-800"
+                : "text-gray-500 hover:text-gray-300"
+            }`}
+          >
+            <span>🧭 游标</span>
+          </button>
+          <button
             onClick={() => setShowPlaneLayer(!showPlaneLayer)}
             title={showPlaneLayer ? "点击隐藏基准平面网格" : "点击显示基准平面网格"}
             className={`px-1.5 py-0.5 rounded font-medium transition flex items-center gap-1 ${
               showPlaneLayer
-                ? "bg-purple-600 text-white shadow-sm"
+                ? "bg-purple-600 text-white shadow-sm font-semibold"
                 : theme === "light"
                 ? "text-gray-500 hover:text-gray-800"
                 : "text-gray-500 hover:text-gray-300"

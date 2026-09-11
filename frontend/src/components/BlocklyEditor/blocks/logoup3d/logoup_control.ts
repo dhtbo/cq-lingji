@@ -5,14 +5,15 @@ import { LOGOUP_COLORS } from "../types";
  * LogoUp 3D 控制流程积木体系 (完全对标原生 LogoUp3D 控制与变量函数架构)
  */
 export function registerLogoUpControlBlocks() {
-  // 1. 开始 (START 帽子积木)
+  // 1. 开始 (START 帽子积木，对标图 1 经典 Scratch 帽子形状与金橙配色)
   Blockly.Blocks["logoup_start"] = {
     init: function () {
       this.appendDummyInput()
-        .appendField("🏁 开始");
+        .appendField("开始");
       this.setNextStatement(true, null);
-      this.setColour(LOGOUP_COLORS.CONTROL);
-      this.setTooltip("程序执行起点");
+      this.setColour("#f59e0b");
+      (this as any).hat = "cap";
+      this.setTooltip("程序执行起点：只有直接或间接吸附到开始积木的下游积木才会生效执行");
     },
   };
 

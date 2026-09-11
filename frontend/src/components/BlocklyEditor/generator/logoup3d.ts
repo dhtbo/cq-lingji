@@ -624,5 +624,11 @@ export function registerLogoUp3DGenerator() {
     return `torus(${r1}, ${r2})\n`;
   };
 
+  pythonGenerator.forBlock["logoup_cone"] = function (block) {
+    const r = block.getFieldValue("RADIUS");
+    const h = block.getFieldValue("HEIGHT");
+    return `cone(${r}, ${h})\n`;
+  };
+
   generatorRegistered = true;
 }

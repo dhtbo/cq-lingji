@@ -577,15 +577,52 @@ import { registerLogoUp3DGenerator } from "./logoup3d";
 
 /**
  * 将 Blockly 工作区转换为规范的 build123d / LogoUp3D 脚本代码
+/**
+ * 将 Blockly 工作区完整转换为 build123d / LogoUp 3D Python 源码
  */
 export function workspaceToBuild123d(workspace: Blockly.Workspace): string {
   registerBuild123dGenerator();
   registerLogoUp3DGenerator();
-  const rawCode = pythonGenerator.workspaceToCode(workspace);
+
+  const allBlocks = workspace.getAllBlocks(false);
+  if (allBlocks.length === 0) {
+    return "";
+  }
+
+  // 检查是否存在 logoup_start 积木
+  const startBlocks = allBlocks.filter((b) => b.type === "logoup_start");
+  let rawCode = "";
+
+  if (startBlocks.length > 0) {
+    // 若存在开始积木，仅从各开始积木开始向下提取相连的代码链
+    const codeSegments: string[] = [];
+    for (const startBlock of startBlocks) {
+      if (!startBlock.isEnabled()) continue;
+      // 只有当开始积木后面连接了实际构件或指令积木时才生成
+      const nextBlock = startBlock.getNextBlock();
+      if (!nextBlock || !nextBlock.isEnabled()) continue;
+
+      const blockCode = pythonGenerator.blockToCode(startBlock);
+      const codeStr = Array.isArray(blockCode) ? blockCode[0] : (blockCode as string);
+      if (codeStr && codeStr.trim()) {
+        codeSegments.push(codeStr.trim());
+      }
+    }
+    rawCode = codeSegments.join("\n\n");
+  } else {
+    // 兼容传统的非 LogoUp 积木（如 b3d_build_part 等）
+    const b3dBlocks = allBlocks.filter((b) => b.isEnabled() && b.type.startsWith("b3d_"));
+    if (b3dBlocks.length > 0) {
+      rawCode = pythonGenerator.workspaceToCode(workspace);
+    } else {
+      // 仅有未连接到开始积木的孤立块，不生成任何代码
+      return "";
+    }
+  }
 
   // 清洗空行并补全标准头部
   const cleanCode = rawCode.trim();
-  if (!cleanCode) {
+  if (!cleanCode || cleanCode === "# 🏁 开始 LogoUp 3D 造型") {
     return "";
   }
 
@@ -594,9 +631,12 @@ export function workspaceToBuild123d(workspace: Blockly.Workspace): string {
     cleanCode.includes("extrude(") ||
     cleanCode.includes("go(") ||
     cleanCode.includes("rect(") ||
+    cleanCode.includes("square(") ||
     cleanCode.includes("box(") ||
     cleanCode.includes("cylinder(") ||
     cleanCode.includes("sphere(") ||
+    cleanCode.includes("cone(") ||
+    cleanCode.includes("pyramid_solid(") ||
     cleanCode.includes("torus(") ||
     cleanCode.includes("polygon(") ||
     cleanCode.includes("star(") ||
@@ -604,6 +644,8 @@ export function workspaceToBuild123d(workspace: Blockly.Workspace): string {
     cleanCode.includes("ellipse(") ||
     cleanCode.includes("egg(") ||
     cleanCode.includes("up(") ||
+    cleanCode.includes("width(") ||
+    cleanCode.includes("fill()") ||
     cleanCode.includes("body()") ||
     cleanCode.includes("reset()") ||
     cleanCode.includes("push()") ||

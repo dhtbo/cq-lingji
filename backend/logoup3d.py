@@ -20,6 +20,28 @@ def _rot_vector(v: Vector, axis: Vector, deg: float) -> Vector:
     return v * c + k.cross(v) * s + k * (k.dot(v)) * (1.0 - c)
 
 
+def _create_hollow_face(face_solid: Any, wall_thickness: float) -> Any:
+    """根据笔画宽度 wall_thickness 生成带壁厚的闭合中空环面 (对标图 3 & 图 4)"""
+    t = float(wall_thickness)
+    if t <= 0.05:
+        return face_solid
+    try:
+        inner = b3d.offset(face_solid, amount=-t)
+        res = face_solid - inner
+        if res.area > 1e-4:
+            return res
+    except Exception:
+        pass
+    try:
+        outer = b3d.offset(face_solid, amount=t)
+        res = outer - face_solid
+        if res.area > 1e-4:
+            return res
+    except Exception:
+        pass
+    return face_solid
+
+
 class Pose:
     """游标三维位姿 (位置 + 前进方向 + 天顶方向 + 横向方向)"""
     def __init__(self, pos: Vector, heading: Vector, up: Vector):
@@ -55,6 +77,9 @@ class LogoUp3D:
         self.current_path_points: List[Vector] = []
         self.current_sketch_faces: List[Any] = []
         self.last_sketch_face: Optional[Any] = None
+        self.last_solid_face: Optional[Any] = None
+        self.last_hollow_face: Optional[Any] = None
+        self.is_filled: bool = False
 
         # 轨迹与草图线框状态 (对标图 2 游标指示与未填充草图线框)
         self.trail_segments: List[Dict[str, Any]] = []
@@ -189,19 +214,21 @@ class LogoUp3D:
         return self.fill()
 
     def fill(self) -> LogoUp3D:
-        """填充上笔的环 (FILL)：将前置未填充的平面线框 (Wire) 填充为实心面 (Face)，随后可进行拉伸"""
-        # 1. 优先填充刚刚生成的平面构件线框
-        if self.last_sketch_wire is not None:
-            try:
-                face = b3d.make_face(self.last_sketch_wire)
-                self.current_sketch_faces.append(face)
-                self.last_sketch_face = face
-                if self.last_sketch_wire in self.pending_sketch_wires:
-                    self.pending_sketch_wires.remove(self.last_sketch_wire)
-                self.last_sketch_wire = None
-                return self
-            except Exception:
-                pass
+        """填充上笔的环 (FILL)：将前置未填充的平面线框 (Wire) 或空心环面填充为实心面 (Face)，随后可进行实心拉伸 (对标图 2)"""
+        sketch_color = Color(234 / 255.0, 88 / 255.0, 12 / 255.0)
+        # 1. 优先将刚刚生成的构件由空心面替换为实心面
+        if self.last_solid_face is not None:
+            if self.last_sketch_face in self.current_sketch_faces:
+                idx = self.current_sketch_faces.index(self.last_sketch_face)
+                self.current_sketch_faces[idx] = self.last_solid_face
+            else:
+                self.current_sketch_faces.append(self.last_solid_face)
+            self.last_sketch_face = self.last_solid_face
+            self.is_filled = True
+            if self.last_sketch_wire in self.pending_sketch_wires:
+                self.pending_sketch_wires.remove(self.last_sketch_wire)
+            self.last_sketch_wire = None
+            return self
 
         # 2. 其次填充手动画笔 draw() 勾勒的折线线框
         if self.is_drawing and len(self.current_path_points) >= 3:
@@ -212,8 +239,11 @@ class LogoUp3D:
                 poly = b3d.Polyline(pts)
                 world_wire = self.current_plane * poly.wire()
                 face = b3d.make_face(world_wire)
+                face.color = sketch_color
                 self.current_sketch_faces.append(face)
                 self.last_sketch_face = face
+                self.last_solid_face = face
+                self.is_filled = True
             except Exception:
                 pass
             self.is_drawing = False
@@ -225,8 +255,11 @@ class LogoUp3D:
             try:
                 wire = self.pending_sketch_wires.pop()
                 face = b3d.make_face(wire)
+                face.color = sketch_color
                 self.current_sketch_faces.append(face)
                 self.last_sketch_face = face
+                self.last_solid_face = face
+                self.is_filled = True
                 self.last_sketch_wire = None
             except Exception:
                 pass
@@ -323,8 +356,9 @@ class LogoUp3D:
 
     def _add_2d_wire(self, shape_or_wire: Any) -> LogoUp3D:
         """
-        将 2D 轮廓依附于当前工作平面，作为未填充草图线框 (Wire) 记录。
-        遵从 LogoUp 规范：平面构件仅产出未填充线框，需显式执行 fill() 后才形成实心 Face 并可拉伸。
+        将 2D 轮廓依附于当前工作平面，默认构建带壁厚的橙色截面与轮廓线框。
+        当未执行 fill() 时：可直接拉伸为壁厚等于 pen_width 的中空套筒（对标图 4）；
+        当显式执行 fill() 后：截面填实为实心面，拉伸为实心柱体（对标图 2）。
         """
         target_wire = shape_or_wire
         if hasattr(shape_or_wire, "wire") and callable(shape_or_wire.wire):
@@ -337,7 +371,30 @@ class LogoUp3D:
         world_wire = self.current_plane * target_wire
         self.pending_sketch_wires.append(world_wire)
         self.last_sketch_wire = world_wire
-        self.last_sketch_face = None  # 明确置空，未填充前不可直接拉伸
+
+        try:
+            local_solid_face = b3d.make_face(target_wire)
+            local_hollow_face = _create_hollow_face(local_solid_face, self.pen_width)
+            world_solid = self.current_plane * local_solid_face
+            world_hollow = self.current_plane * local_hollow_face
+
+            # 默认鲜橙色绘制与填充 (#ea580c)
+            sketch_color = Color(234 / 255.0, 88 / 255.0, 12 / 255.0)
+            try:
+                world_solid.color = sketch_color
+                world_hollow.color = sketch_color
+            except Exception:
+                pass
+
+            self.last_solid_face = world_solid
+            self.last_hollow_face = world_hollow
+            self.last_sketch_face = world_hollow
+            self.is_filled = False
+
+            self.current_sketch_faces.append(world_hollow)
+        except Exception:
+            pass
+
         self.is_active = True
         return self
 
@@ -558,12 +615,18 @@ class LogoUp3D:
         return self
 
     def extrude(self, height: float) -> LogoUp3D:
-        """拉伸 (EXTRUDE) 高 [height] 毫米"""
+        """拉伸 (EXTRUDE) 高 [height] 毫米 (直接支持中空套筒或实心体拉伸)"""
         h = float(height)
         if self.last_sketch_face is not None and abs(h) > 1e-4:
             try:
                 solid = b3d.extrude(self.last_sketch_face, amount=h)
                 self._integrate_solid(solid)
+                if self.last_sketch_face in self.current_sketch_faces:
+                    self.current_sketch_faces.remove(self.last_sketch_face)
+                self.last_sketch_face = None
+                self.last_solid_face = None
+                self.last_hollow_face = None
+                self.pending_sketch_wires.clear()
             except Exception:
                 pass
         return self
@@ -575,42 +638,83 @@ class LogoUp3D:
             try:
                 solid = b3d.extrude(self.last_sketch_face, amount=h / 2.0, both=True)
                 self._integrate_solid(solid)
+                if self.last_sketch_face in self.current_sketch_faces:
+                    self.current_sketch_faces.remove(self.last_sketch_face)
+                self.last_sketch_face = None
+                self.last_solid_face = None
+                self.last_hollow_face = None
+                self.pending_sketch_wires.clear()
             except Exception:
                 pass
         return self
 
     def pyramid(self, height: float) -> LogoUp3D:
-        """锥拉伸 (PYRAMID) 高 [height] 毫米：生成数学严格尖顶棱锥或圆锥"""
+        """锥拉伸 (PYRAMID) 高 [height] 毫米：生成数学严格尖顶棱锥、圆锥或空心圆锥"""
         h = float(height)
         if self.last_sketch_face is not None and abs(h) > 1e-4:
             try:
                 base_face = self.last_sketch_face
                 edges = base_face.edges()
-                is_circle = (len(edges) == 1 and edges[0].geom_type.name in ["CIRCLE", "ELLIPSE"])
                 normal = self.up_dir.normalized()
+                h_mag = abs(h)
+                eff_norm = normal if h >= 0 else -normal
 
-                if is_circle:
-                    r = edges[0].radius if hasattr(edges[0], "radius") else (base_face.area / math.pi) ** 0.5
+                circle_edges = [e for e in edges if e.geom_type.name in ["CIRCLE", "ELLIPSE"]]
+                if len(circle_edges) >= 2:
+                    # 包含内孔的圆环草图（未填充圆形） -> 生成数学严格空心圆锥！
+                    radii = [e.radius for e in circle_edges if hasattr(e, "radius")]
+                    if len(radii) >= 2:
+                        R = max(radii)
+                        r = min(radii)
+                    else:
+                        R = max(e.length / (2 * math.pi) for e in circle_edges)
+                        r = min(e.length / (2 * math.pi) for e in circle_edges)
                     c = base_face.center()
-                    h_mag = abs(h)
-                    eff_norm = normal if h >= 0 else -normal
+                    c_out = b3d.Cone(bottom_radius=R, top_radius=0.0, height=h_mag)
+                    c_in = b3d.Cone(bottom_radius=r, top_radius=0.0, height=h_mag)
+                    plane = Plane(origin=c, z_dir=eff_norm)
+                    solid = plane * (c_out - c_in)
+                elif len(circle_edges) == 1:
+                    # 单实心圆 -> 生成实心圆锥
+                    e = circle_edges[0]
+                    r = e.radius if hasattr(e, "radius") else (base_face.area / math.pi) ** 0.5
+                    c = base_face.center()
                     cone = b3d.Cone(bottom_radius=r, top_radius=0.0, height=h_mag)
                     plane = Plane(origin=c, z_dir=eff_norm)
                     solid = plane * cone
                 else:
-                    center = base_face.center()
-                    apex = center + normal * h
-                    wire = base_face.outer_wire() if hasattr(base_face, "outer_wire") else base_face.wires()[0]
-                    side_faces = []
-                    for edge in wire.edges():
-                        p1 = edge.start_point()
-                        p2 = edge.end_point()
-                        tri_wire = Wire.make_polygon([p1, p2, apex, p1])
-                        side_faces.append(Face(tri_wire))
-                    shell = b3d.Shell([base_face] + side_faces)
-                    solid = Solid(shell)
+                    # 多边形或带内孔的多边形
+                    wires = base_face.wires()
+                    if len(wires) >= 2:
+                        outer_w = base_face.outer_wire() if hasattr(base_face, "outer_wire") else wires[0]
+                        inner_w = [w for w in wires if w != outer_w][0]
+                        center = base_face.center()
+                        apex = center + normal * h
+                        out_sides = [Face(Wire.make_polygon([e.start_point(), e.end_point(), apex, e.start_point()])) for e in outer_w.edges()]
+                        out_pyr = Solid(b3d.Shell([Face(outer_w)] + out_sides))
+                        in_sides = [Face(Wire.make_polygon([e.start_point(), e.end_point(), apex, e.start_point()])) for e in inner_w.edges()]
+                        in_pyr = Solid(b3d.Shell([Face(inner_w)] + in_sides))
+                        solid = out_pyr - in_pyr
+                    else:
+                        center = base_face.center()
+                        apex = center + normal * h
+                        wire = base_face.outer_wire() if hasattr(base_face, "outer_wire") else wires[0]
+                        side_faces = []
+                        for edge in wire.edges():
+                            p1 = edge.start_point()
+                            p2 = edge.end_point()
+                            tri_wire = Wire.make_polygon([p1, p2, apex, p1])
+                            side_faces.append(Face(tri_wire))
+                        shell = b3d.Shell([base_face] + side_faces)
+                        solid = Solid(shell)
 
                 self._integrate_solid(solid)
+                if self.last_sketch_face in self.current_sketch_faces:
+                    self.current_sketch_faces.remove(self.last_sketch_face)
+                self.last_sketch_face = None
+                self.last_solid_face = None
+                self.last_hollow_face = None
+                self.pending_sketch_wires.clear()
             except Exception as e:
                 pass
         return self
@@ -624,6 +728,12 @@ class LogoUp3D:
                 if self.solids:
                     combined = self.solids[0] if len(self.solids) == 1 else Compound(children=self.solids)
                     self.solids = [combined - tool_solid]
+                if self.last_sketch_face in self.current_sketch_faces:
+                    self.current_sketch_faces.remove(self.last_sketch_face)
+                self.last_sketch_face = None
+                self.last_solid_face = None
+                self.last_hollow_face = None
+                self.pending_sketch_wires.clear()
             except Exception:
                 pass
         return self
@@ -687,6 +797,16 @@ class LogoUp3D:
         t = b3d.Torus(major_radius=r1, minor_radius=r2)
         world_torus = self.current_plane * t
         return self._integrate_solid(world_torus)
+
+    def cone(self, radius: float, height: float) -> LogoUp3D:
+        """圆锥 半径 [radius] 高 [height] (严格尖顶正圆锥，对标图 media_1789103522692.png)"""
+        r, h = max(0.1, float(radius)), float(height)
+        h_mag = abs(h)
+        eff_norm = self.up_dir.normalized() if h >= 0 else -self.up_dir.normalized()
+        c = b3d.Cone(bottom_radius=r, top_radius=0.0, height=h_mag)
+        plane = Plane(origin=self.pos, z_dir=eff_norm)
+        world_cone = plane * c
+        return self._integrate_solid(world_cone)
 
     # =========================================================================
     # 8. 导出最终 3D 几何实体与视口元数据 (给沙箱与 Three.js 视口)
@@ -948,6 +1068,9 @@ def pyramid_solid(sides: int, radius: float, height: float) -> LogoUp3D:
 
 def torus(major_radius: float, minor_radius: float) -> LogoUp3D:
     return _DEFAULT_LOGOUP.torus(major_radius, minor_radius)
+
+def cone(radius: float, height: float) -> LogoUp3D:
+    return _DEFAULT_LOGOUP.cone(radius, height)
 
 def get_model() -> Any:
     return _DEFAULT_LOGOUP.to_part()

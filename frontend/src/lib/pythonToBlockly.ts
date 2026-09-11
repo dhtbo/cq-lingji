@@ -523,6 +523,20 @@ function parseLogoUpStatement(
     return true;
   }
 
+  // cone(r, h)
+  const coneCall = extractFunctionCall(trimmed, "cone");
+  if (coneCall) {
+    const args = splitTopLevelArgs(coneCall.argsStr);
+    addBlock({
+      type: "logoup_cone",
+      fields: {
+        RADIUS: Number(args[0]) || 10,
+        HEIGHT: Number(args[1]) || 15,
+      },
+    });
+    return true;
+  }
+
   // sphere(r)
   const sphCall = extractFunctionCall(trimmed, "sphere");
   if (sphCall) {

@@ -54,19 +54,19 @@ function createTextSprite(text: string, color: string): THREE.Sprite {
     depthTest: false,
   });
   const sprite = new THREE.Sprite(material);
-  sprite.scale.set(4.5, 4.5, 1);
+  sprite.scale.set(2.2, 2.2, 1);
   return sprite;
 }
 
 /**
- * 构建高保真三维游标 Group (严格对标图 2: 白色底座 + 红褐色双棱锥晶体 + 局部 X/Y/Z 轴标)
+ * 构建高保真三维游标 Group (缩小一倍，小巧精致且支持动态旋转姿态对齐)
  */
 function buildCursorGroup(metadata: LogoUpCursorMetadata): THREE.Group {
   const group = new THREE.Group();
   group.name = "logoup_cursor";
 
-  // 1. 白色立方体底座与基底边框
-  const baseSize = 2.4;
+  // 1. 白色立方体底座与基底边框 (缩小 50%：1.2mm)
+  const baseSize = 1.2;
   const baseGeo = new THREE.BoxGeometry(baseSize, baseSize, baseSize);
   const baseMat = new THREE.MeshStandardMaterial({
     color: 0xffffff,
@@ -78,14 +78,14 @@ function buildCursorGroup(metadata: LogoUpCursorMetadata): THREE.Group {
   group.add(baseMesh);
 
   // 底座黄色脚标线框
-  const frameGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(baseSize * 1.35, baseSize * 1.35, 0.4));
+  const frameGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(baseSize * 1.35, baseSize * 1.35, 0.2));
   const frameMat = new THREE.LineBasicMaterial({ color: 0xf59e0b });
   const frameLine = new THREE.LineSegments(frameGeo, frameMat);
-  frameLine.position.set(0, 0, 0.2);
+  frameLine.position.set(0, 0, 0.1);
   group.add(frameLine);
 
-  // 2. 红褐色双棱锥晶体 (双椎钻石形态，上尖下尖)
-  const crystalRadius = 3.6;
+  // 2. 红褐色双棱锥晶体 (缩小 50%：半径 1.8mm)
+  const crystalRadius = 1.8;
   const crystalGeo = new THREE.OctahedronGeometry(crystalRadius, 0);
   crystalGeo.scale(1.0, 1.0, 1.45); // 沿局部 Z 轴拉伸形成双尖棱形
   const crystalMat = new THREE.MeshStandardMaterial({
@@ -100,8 +100,8 @@ function buildCursorGroup(metadata: LogoUpCursorMetadata): THREE.Group {
   group.add(crystalMesh);
 
   // 3. 局部 Z 轴 (从晶体顶部垂直向上 +Z 伸展，蓝色轴柱 + 蓝色圆锥箭头 + 蓝色 "Z" 标签)
-  const zAxisLen = 12;
-  const zStemGeo = new THREE.CylinderGeometry(0.45, 0.45, zAxisLen, 12);
+  const zAxisLen = 6.0;
+  const zStemGeo = new THREE.CylinderGeometry(0.22, 0.22, zAxisLen, 12);
   const zMat = new THREE.MeshBasicMaterial({ color: 0x2563eb });
   const zStem = new THREE.Mesh(zStemGeo, zMat);
   zStem.rotation.x = Math.PI / 2; // +Y 旋至 +Z
@@ -110,61 +110,60 @@ function buildCursorGroup(metadata: LogoUpCursorMetadata): THREE.Group {
   zStem.renderOrder = 200;
   group.add(zStem);
 
-  const zConeGeo = new THREE.ConeGeometry(1.2, 2.8, 12);
+  const zConeGeo = new THREE.ConeGeometry(0.6, 1.4, 12);
   const zCone = new THREE.Mesh(zConeGeo, zMat);
   zCone.rotation.x = Math.PI / 2; // +Y 旋至 +Z
-  zCone.position.set(0, 0, zStart + zAxisLen + 1.4);
+  zCone.position.set(0, 0, zStart + zAxisLen + 0.7);
   zCone.renderOrder = 200;
   group.add(zCone);
 
   const zLabel = createTextSprite("Z", "#2563eb");
-  zLabel.position.set(0, 0, zStart + zAxisLen + 4.5);
+  zLabel.position.set(0, 0, zStart + zAxisLen + 2.4);
   zLabel.renderOrder = 201;
   group.add(zLabel);
 
   // 4. 局部 X 轴 (红色轴柱 + 红色圆锥箭头 + 红色 "X" 标签，从原点向局部 +X 延伸)
   const xMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
-  const xStemGeo = new THREE.CylinderGeometry(0.45, 0.45, 18, 12);
+  const xStemGeo = new THREE.CylinderGeometry(0.22, 0.22, 9, 12);
   const xStem = new THREE.Mesh(xStemGeo, xMat);
   xStem.rotation.z = -Math.PI / 2; // +Y 旋至 +X
-  xStem.position.set(9, 0, baseSize / 2);
+  xStem.position.set(4.5, 0, baseSize / 2);
   xStem.renderOrder = 200;
   group.add(xStem);
 
-  const xConeGeo = new THREE.ConeGeometry(1.2, 2.8, 12);
+  const xConeGeo = new THREE.ConeGeometry(0.6, 1.4, 12);
   const xCone = new THREE.Mesh(xConeGeo, xMat);
   xCone.rotation.z = -Math.PI / 2; // +Y 旋至 +X
-  xCone.position.set(18 + 1.4, 0, baseSize / 2);
+  xCone.position.set(9 + 0.7, 0, baseSize / 2);
   xCone.renderOrder = 200;
   group.add(xCone);
 
   const xLabel = createTextSprite("X", "#ef4444");
-  xLabel.position.set(18 + 4.5, 0, baseSize / 2);
+  xLabel.position.set(9 + 2.4, 0, baseSize / 2);
   xLabel.renderOrder = 201;
   group.add(xLabel);
 
   // 5. 局部 Y 轴 (绿色轴柱 + 绿色圆锥箭头 + 绿色 "Y" 标签，从原点沿前进方向 +Y 延伸)
   const yMat = new THREE.MeshBasicMaterial({ color: 0x10b981 });
-  const yStemGeo = new THREE.CylinderGeometry(0.45, 0.45, 18, 12);
+  const yStemGeo = new THREE.CylinderGeometry(0.22, 0.22, 9, 12);
   const yStem = new THREE.Mesh(yStemGeo, yMat);
   // Cylinder 默认沿 +Y 轴，无需旋转
-  yStem.position.set(0, 9, baseSize / 2);
+  yStem.position.set(0, 4.5, baseSize / 2);
   yStem.renderOrder = 200;
   group.add(yStem);
 
-  const yConeGeo = new THREE.ConeGeometry(1.2, 2.8, 12);
+  const yConeGeo = new THREE.ConeGeometry(0.6, 1.4, 12);
   const yCone = new THREE.Mesh(yConeGeo, yMat);
-  // Cone 默认尖端朝 +Y，无需旋转
-  yCone.position.set(0, 18 + 1.4, baseSize / 2);
+  yCone.position.set(0, 9 + 0.7, baseSize / 2);
   yCone.renderOrder = 200;
   group.add(yCone);
 
   const yLabel = createTextSprite("Y", "#10b981");
-  yLabel.position.set(0, 18 + 4.5, baseSize / 2);
+  yLabel.position.set(0, 9 + 2.4, baseSize / 2);
   yLabel.renderOrder = 201;
   group.add(yLabel);
 
-  // 6. 根据局部坐标系姿态整体旋转与定位游标 Group
+  // 6. 根据局部坐标系姿态动态旋转与定位游标 Group
   const rightVec = new THREE.Vector3(...metadata.right).normalize();
   const headVec = new THREE.Vector3(...metadata.heading).normalize();
   const upVec = new THREE.Vector3(...metadata.up_dir).normalize();
@@ -187,11 +186,11 @@ function buildDirectionArrowsGroup(metadata: LogoUpCursorMetadata): THREE.Group 
     return group;
   }
 
-  // 构造实心立体 Chevron 箭头几何体 (指向 +Y 方向，具有真实物理厚度与高明度橙色)
+  // 构造实心立体 Chevron 箭头几何体 (缩小一倍，与小游标保持协调比例)
   const arrowShape = new THREE.Shape();
-  const w = 4.2;
-  const h = 5.2;
-  const d = 2.4;
+  const w = 2.4;
+  const h = 3.0;
+  const d = 1.4;
   arrowShape.moveTo(0, h);
   arrowShape.lineTo(w, 0);
   arrowShape.lineTo(w * 0.65, 0);
@@ -200,12 +199,12 @@ function buildDirectionArrowsGroup(metadata: LogoUpCursorMetadata): THREE.Group 
   arrowShape.lineTo(-w, 0);
   arrowShape.closePath();
 
-  // 给予 0.8mm 立体挤压厚度，在任何光照和视角下均立体饱满
+  // 给予 0.4mm 立体厚度
   const arrowGeo = new THREE.ExtrudeGeometry(arrowShape, {
-    depth: 0.8,
+    depth: 0.4,
     bevelEnabled: true,
-    bevelThickness: 0.15,
-    bevelSize: 0.15,
+    bevelThickness: 0.08,
+    bevelSize: 0.08,
     bevelSegments: 2,
   });
   const arrowMat = new THREE.MeshStandardMaterial({
@@ -215,14 +214,14 @@ function buildDirectionArrowsGroup(metadata: LogoUpCursorMetadata): THREE.Group 
     side: THREE.DoubleSide,
   });
 
-  const stepDistance = 7.5; // 间距 7.5mm 呈现优美节奏感
+  const stepDistance = 4.8; // 间距 4.8mm 呈现优美节奏感
 
   for (const trail of metadata.trails) {
     const p1 = new THREE.Vector3(...trail.start);
     const p2 = new THREE.Vector3(...trail.end);
     const segVec = p2.clone().sub(p1);
     const len = segVec.length();
-    if (len < 2.0) continue;
+    if (len < 1.5) continue;
 
     const dir = segVec.clone().normalize();
     const normal = metadata.plane
@@ -235,8 +234,7 @@ function buildDirectionArrowsGroup(metadata: LogoUpCursorMetadata): THREE.Group 
     for (let i = 1; i <= count; i++) {
       const t = i / (count + 1);
       const pos = p1.clone().lerp(p2, t);
-      // 微向上偏移 0.3mm 确保立体浮空于草图基准面之上
-      pos.add(normal.clone().multiplyScalar(0.3));
+      pos.add(normal.clone().multiplyScalar(0.2));
 
       const arrowMesh = new THREE.Mesh(arrowGeo, arrowMat);
       arrowMesh.setRotationFromMatrix(alignMat);
@@ -258,7 +256,7 @@ function buildSketchPlaneGroup(metadata: LogoUpCursorMetadata): THREE.Group {
 
   if (!metadata.plane) return group;
 
-  const size = 70;
+  const size = 60;
   const planeGeo = new THREE.PlaneGeometry(size, size);
   const planeMat = new THREE.MeshBasicMaterial({
     color: 0x38bdf8,
@@ -292,7 +290,7 @@ function buildSketchPlaneGroup(metadata: LogoUpCursorMetadata): THREE.Group {
 }
 
 /**
- * 构建未填充草图闭合线框 (未调用 fill 时保持线框模式)
+ * 构建未填充草图闭合线框 (默认鲜橙色高饱和线框，对标图 3)
  */
 function buildPendingWiresGroup(metadata: LogoUpCursorMetadata): THREE.Group {
   const group = new THREE.Group();
@@ -307,7 +305,8 @@ function buildPendingWiresGroup(metadata: LogoUpCursorMetadata): THREE.Group {
     const points = wirePts.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
     const geo = new THREE.BufferGeometry().setFromPoints(points);
     const mat = new THREE.LineBasicMaterial({
-      color: 0xfacc15,
+      color: 0xea580c, // 对标图 3 高明度鲜橙色
+      linewidth: 2,
       depthTest: false,
     });
     const line = new THREE.LineLoop(geo, mat);
@@ -318,9 +317,22 @@ function buildPendingWiresGroup(metadata: LogoUpCursorMetadata): THREE.Group {
 }
 
 /**
- * 刷新或挂载 LogoUp 3D 视口覆盖层到 Three.js 场景
+ * 视口覆盖层图层显隐控制选项
  */
-export function updateLogoUpOverlay(scene: THREE.Scene, metadata: LogoUpCursorMetadata | null): void {
+export interface LogoUpOverlayOptions {
+  showCursor?: boolean;
+  showPlane?: boolean;
+  showSketch?: boolean;
+}
+
+/**
+ * 刷新或挂载 LogoUp 3D 视口覆盖层到 Three.js 场景 (支持游标、草图、基准面独立显隐)
+ */
+export function updateLogoUpOverlay(
+  scene: THREE.Scene,
+  metadata: LogoUpCursorMetadata | null,
+  options?: LogoUpOverlayOptions
+): void {
   if (!scene) return;
 
   const oldOverlay = scene.getObjectByName(OVERLAY_GROUP_NAME);
@@ -330,13 +342,23 @@ export function updateLogoUpOverlay(scene: THREE.Scene, metadata: LogoUpCursorMe
 
   if (!metadata) return;
 
+  const showCursor = options?.showCursor ?? true;
+  const showPlane = options?.showPlane ?? true;
+  const showSketch = options?.showSketch ?? true;
+
   const overlayGroup = new THREE.Group();
   overlayGroup.name = OVERLAY_GROUP_NAME;
 
-  overlayGroup.add(buildSketchPlaneGroup(metadata));
-  overlayGroup.add(buildPendingWiresGroup(metadata));
-  overlayGroup.add(buildDirectionArrowsGroup(metadata));
-  overlayGroup.add(buildCursorGroup(metadata));
+  if (showPlane) {
+    overlayGroup.add(buildSketchPlaneGroup(metadata));
+  }
+  if (showSketch) {
+    overlayGroup.add(buildPendingWiresGroup(metadata));
+  }
+  if (showCursor) {
+    overlayGroup.add(buildDirectionArrowsGroup(metadata));
+    overlayGroup.add(buildCursorGroup(metadata));
+  }
 
   scene.add(overlayGroup);
 }

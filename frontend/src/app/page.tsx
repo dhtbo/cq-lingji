@@ -886,10 +886,14 @@ export default function StudioPage() {
             }
           }, 50);
         }
+        // 切换到积木模式默认锁定同步
+        setIsLocked(true);
+        isLockedRef.current = true;
         setViewMode("block");
+        showToast("🔒 已切换至积木模式（默认锁定代码同步）");
       }
     },
-    [viewMode, code]
+    [viewMode, code, showToast]
   );
 
   // 暴露给外部或自动化测试的无损注入接口

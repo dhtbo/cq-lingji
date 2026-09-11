@@ -83,4 +83,19 @@ export function registerLogoUpComponents3DBlocks() {
       this.setTooltip("在当前游标位置生成一个圆环体 (○ 圆环 大圆半径 10 小圆半径 4)");
     },
   };
+
+  // 6. 圆锥 (严格对标图: △ 圆锥 半径 [10] 高 [15])
+  Blockly.Blocks["logoup_cone"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("△ 圆锥 半径")
+        .appendField(new Blockly.FieldNumber(10, 0.1), "RADIUS")
+        .appendField("高")
+        .appendField(new Blockly.FieldNumber(15, 0.1), "HEIGHT");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(LOGOUP_COLORS.COMPONENTS_3D);
+      this.setTooltip("在当前游标位置生成一个尖顶正圆锥体");
+    },
+  };
 }

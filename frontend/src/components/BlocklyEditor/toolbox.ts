@@ -11,7 +11,7 @@ export const BUILD123D_TOOLBOX = {
     // =========================================================================
     {
       kind: "category",
-      name: "🕹️ 控制流程 (LogoUp)",
+      name: "🕹️ 控制流程",
       colour: LOGOUP_COLORS.CONTROL,
       contents: [
         { kind: "block", type: "logoup_start" },
@@ -78,7 +78,7 @@ export const BUILD123D_TOOLBOX = {
     },
     {
       kind: "category",
-      name: "🔢 数学运算 (LogoUp)",
+      name: "🔢 数学逻辑",
       colour: LOGOUP_COLORS.MATH,
       contents: [
         {
@@ -116,6 +116,14 @@ export const BUILD123D_TOOLBOX = {
           inputs: {
             A: { shadow: { type: "math_number", fields: { NUM: 10 } } },
             B: { shadow: { type: "math_number", fields: { NUM: 2 } } },
+          },
+        },
+        {
+          kind: "block",
+          type: "logoup_mod",
+          inputs: {
+            A: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+            B: { shadow: { type: "math_number", fields: { NUM: 3 } } },
           },
         },
         {
@@ -166,31 +174,14 @@ export const BUILD123D_TOOLBOX = {
             B: { shadow: { type: "math_number", fields: { NUM: 1 } } },
           },
         },
-        {
-          kind: "block",
-          type: "logoup_and",
-        },
-        {
-          kind: "block",
-          type: "logoup_or",
-        },
-        {
-          kind: "block",
-          type: "logoup_not",
-        },
-        {
-          kind: "block",
-          type: "logoup_mod",
-          inputs: {
-            A: { shadow: { type: "math_number", fields: { NUM: 10 } } },
-            B: { shadow: { type: "math_number", fields: { NUM: 3 } } },
-          },
-        },
+        { kind: "block", type: "logoup_and" },
+        { kind: "block", type: "logoup_or" },
+        { kind: "block", type: "logoup_not" },
       ],
     },
     {
       kind: "category",
-      name: "🎨 平面绘图 (LogoUp 2D)",
+      name: "🎨 平面绘图",
       colour: LOGOUP_COLORS.DRAWING_2D,
       contents: [
         { kind: "block", type: "logoup_go" },
@@ -207,7 +198,7 @@ export const BUILD123D_TOOLBOX = {
     },
     {
       kind: "category",
-      name: "🧩 平面构件 (LogoUp 2D)",
+      name: "🧩 平面构件",
       colour: LOGOUP_COLORS.COMPONENTS_2D,
       contents: [
         { kind: "block", type: "logoup_rect" },
@@ -231,7 +222,7 @@ export const BUILD123D_TOOLBOX = {
     },
     {
       kind: "category",
-      name: "📐 平面进阶 (LogoUp 2D)",
+      name: "📐 平面进阶",
       colour: LOGOUP_COLORS.ADVANCED_2D,
       contents: [
         { kind: "block", type: "logoup_close" },
@@ -255,7 +246,7 @@ export const BUILD123D_TOOLBOX = {
     },
     {
       kind: "category",
-      name: "🚀 三维绘图 (LogoUp 3D)",
+      name: "🚀 三维绘图",
       colour: LOGOUP_COLORS.DRAWING_3D,
       contents: [
         { kind: "block", type: "logoup_up" },
@@ -276,12 +267,13 @@ export const BUILD123D_TOOLBOX = {
     },
     {
       kind: "category",
-      name: "🧱 三维构件 (LogoUp 3D)",
+      name: "🧱 三维构件",
       colour: LOGOUP_COLORS.COMPONENTS_3D,
       contents: [
         { kind: "block", type: "logoup_box" },
         { kind: "block", type: "logoup_cylinder" },
         { kind: "block", type: "logoup_sphere" },
+        { kind: "block", type: "logoup_cone" },
         { kind: "block", type: "logoup_pyramid_solid" },
         {
           kind: "block",
@@ -295,7 +287,7 @@ export const BUILD123D_TOOLBOX = {
     },
     {
       kind: "category",
-      name: "🛰️ 三维进阶 (LogoUp 3D)",
+      name: "🛰️ 三维进阶",
       colour: LOGOUP_COLORS.ADVANCED_3D,
       contents: [
         { kind: "block", type: "logoup_extrude" },
@@ -319,96 +311,6 @@ export const BUILD123D_TOOLBOX = {
         { kind: "block", type: "logoup_warpx" },
         { kind: "block", type: "logoup_warpy" },
       ],
-    },
-
-    { kind: "sep" },
-
-    // =========================================================================
-    // 2. 通用控制、逻辑与数学体系 (General Flow, Logic, Math, Variables)
-    // =========================================================================
-    {
-      kind: "category",
-      name: "🔁 循环控制",
-      colour: CATEGORY_COLORS.LOOP,
-      contents: [
-        {
-          kind: "block",
-          type: "controls_repeat_ext",
-          inputs: {
-            TIMES: {
-              shadow: {
-                type: "math_number",
-                fields: { NUM: 4 },
-              },
-            },
-          },
-        },
-        {
-          kind: "block",
-          type: "controls_for",
-          inputs: {
-            FROM: {
-              shadow: {
-                type: "math_number",
-                fields: { NUM: 1 },
-              },
-            },
-            TO: {
-              shadow: {
-                type: "math_number",
-                fields: { NUM: 10 },
-              },
-            },
-            BY: {
-              shadow: {
-                type: "math_number",
-                fields: { NUM: 1 },
-              },
-            },
-          },
-        },
-        { kind: "block", type: "controls_whileUntil" },
-      ],
-    },
-    {
-      kind: "category",
-      name: "🔀 逻辑判断",
-      colour: CATEGORY_COLORS.LOGIC,
-      contents: [
-        { kind: "block", type: "controls_if" },
-        { kind: "block", type: "logic_compare" },
-        { kind: "block", type: "logic_operation" },
-        { kind: "block", type: "logic_negate" },
-        { kind: "block", type: "logic_boolean" },
-      ],
-    },
-    {
-      kind: "category",
-      name: "🔢 数学运算",
-      colour: CATEGORY_COLORS.MATH,
-      contents: [
-        { kind: "block", type: "math_number" },
-        { kind: "block", type: "math_arithmetic" },
-        { kind: "block", type: "math_single" },
-        { kind: "block", type: "math_trig" },
-      ],
-    },
-    {
-      kind: "category",
-      name: "📦 变量与赋值",
-      colour: CATEGORY_COLORS.VARIABLE,
-      contents: [
-        { kind: "block", type: "b3d_var_get" },
-        { kind: "block", type: "b3d_var_assign" },
-        { kind: "block", type: "b3d_multi_var_assign" },
-        { kind: "block", type: "b3d_custom_code" },
-      ],
-    },
-    {
-      kind: "category",
-      name: "⚙️ 自定义函数",
-      custom: "PROCEDURE",
-      colour: CATEGORY_COLORS.PROCEDURE,
     },
 
     { kind: "sep" },

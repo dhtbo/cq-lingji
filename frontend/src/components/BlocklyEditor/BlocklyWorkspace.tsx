@@ -77,7 +77,56 @@ export const BlocklyWorkspace: React.FC<BlocklyWorkspaceProps> = ({
       onWorkspaceReady(workspace);
     }
 
-    // 5. 插入默认 LogoUp 3D 紧凑基础积木组合 (🏁 开始 + box(20, 20, 10))
+    // 4.1 定制右键复制功能：默认复制当前积木及其所有后续连接的整串子积木 (对标用户需求)
+    const duplicateRegistryItem = Blockly.ContextMenuRegistry.registry.getItem("blockDuplicate");
+    if (duplicateRegistryItem) {
+      duplicateRegistryItem.callback = function (scope: any) {
+        const block = scope.block;
+        if (!block) return;
+        const ws = block.workspace as Blockly.WorkspaceSvg;
+        // 强制包含所有下游积木 (addNextBlocks: true)
+        const blockJson = Blockly.serialization.blocks.save(block, {
+          addCoordinates: true,
+          addNextBlocks: true,
+        });
+        if (blockJson) {
+          const newBlock = Blockly.serialization.blocks.append(blockJson, ws);
+          if (newBlock) {
+            newBlock.moveBy(24, 24);
+            (newBlock as any).select?.();
+          }
+        }
+      };
+    }
+
+    // 4.2 孤立积木置灰禁用机制：未挂载于 logoup_start 的孤立积木自动设为 disabled (对标图 1 斜网格样式)
+    let isUpdatingOrphan = false;
+    const updateOrphanStates = (ws: Blockly.WorkspaceSvg) => {
+      if (isUpdatingOrphan) return;
+      isUpdatingOrphan = true;
+      try {
+        Blockly.Events.disable();
+        const topBlocks = ws.getTopBlocks(false);
+        for (const topBlock of topBlocks) {
+          const isStartBlock = topBlock.type === "logoup_start";
+          const setTreeEnabled = (b: Blockly.Block, enabled: boolean) => {
+            if (b.isEnabled() !== enabled) {
+              b.setEnabled(enabled);
+            }
+            const children = b.getChildren(false);
+            for (const child of children) {
+              setTreeEnabled(child, enabled);
+            }
+          };
+          setTreeEnabled(topBlock, isStartBlock);
+        }
+      } finally {
+        Blockly.Events.enable();
+        isUpdatingOrphan = false;
+      }
+    };
+
+    // 5. 插入默认 LogoUp 3D 紧凑基础积木组合 (开始 + box(20, 20, 10))
     const startBlock = workspace.newBlock("logoup_start");
     startBlock.initSvg();
     startBlock.render();
@@ -92,13 +141,15 @@ export const BlocklyWorkspace: React.FC<BlocklyWorkspaceProps> = ({
 
     startBlock.nextConnection?.connect(boxOp.previousConnection);
 
-    // 初始生成代码
+    // 初始应用状态与生成代码
+    updateOrphanStates(workspace);
     const initialCode = workspaceToBuild123d(workspace);
     onCodeChange(initialCode);
 
     // 6. 监听积木变更事件 (忽略非内容性纯UI滚动缩放事件)
     const changeListener = (e: Blockly.Events.Abstract) => {
       if (e.isUiEvent || e.type === Blockly.Events.VIEWPORT_CHANGE) return;
+      updateOrphanStates(workspace);
       const code = workspaceToBuild123d(workspace);
       onCodeChange(code);
     };
