@@ -67,18 +67,20 @@ export function registerLogoUpComponents3DBlocks() {
     },
   };
 
-  // 5. 圆环
+  // 5. 圆环 (严格对标图 1: ○ 圆环 大圆半径 (10) 小圆半径 (4))
   Blockly.Blocks["logoup_torus"] = {
     init: function () {
-      this.appendDummyInput()
-        .appendField("⭕ 圆环 大圆半径")
-        .appendField(new Blockly.FieldNumber(10, 0.2), "MAJOR_RADIUS")
-        .appendField("小圆半径")
-        .appendField(new Blockly.FieldNumber(4, 0.1), "MINOR_RADIUS");
+      this.appendValueInput("MAJOR_RADIUS")
+        .setCheck("Number")
+        .appendField("○ 圆环 大圆半径");
+      this.appendValueInput("MINOR_RADIUS")
+        .setCheck("Number")
+        .appendField("小圆半径");
+      this.setInputsInline(true);
       this.setPreviousStatement(true, null);
       this.setNextStatement(true, null);
       this.setColour(LOGOUP_COLORS.COMPONENTS_3D);
-      this.setTooltip("在当前游标位置生成一个甜甜圈圆环体");
+      this.setTooltip("在当前游标位置生成一个圆环体 (○ 圆环 大圆半径 10 小圆半径 4)");
     },
   };
 }

@@ -332,7 +332,11 @@ export default function StudioPage() {
         }
 
         if (res.status === "success") {
-          setMeshData(res.mesh);
+          let meshObj = res.mesh;
+          if (res.cursor_metadata) {
+            meshObj = meshObj ? { ...meshObj, cursor_metadata: res.cursor_metadata } : { cursor_metadata: res.cursor_metadata };
+          }
+          setMeshData(meshObj);
           setExecTime(res.execution_time_ms);
           if (res.steps && res.steps.length > 0) {
             setSteps(res.steps);

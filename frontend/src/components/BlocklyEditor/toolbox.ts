@@ -283,7 +283,14 @@ export const BUILD123D_TOOLBOX = {
         { kind: "block", type: "logoup_cylinder" },
         { kind: "block", type: "logoup_sphere" },
         { kind: "block", type: "logoup_pyramid_solid" },
-        { kind: "block", type: "logoup_torus" },
+        {
+          kind: "block",
+          type: "logoup_torus",
+          inputs: {
+            MAJOR_RADIUS: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+            MINOR_RADIUS: { shadow: { type: "math_number", fields: { NUM: 4 } } },
+          },
+        },
       ],
     },
     {

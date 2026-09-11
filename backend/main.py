@@ -142,13 +142,36 @@ async def render_cad(req: RenderRequest):
         logger.error(f"意外错误: {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"服务端未知错误: {e}")
 
+    # 提取 LogoUp3D 引擎的游标与草图元数据 (三维游标、方向指示箭头、草图平面、未填充线框)
+    cursor_metadata = None
+    try:
+        from backend.logoup3d import get_default_logoup
+        def_logoup = get_default_logoup()
+        if def_logoup.has_activity():
+            cursor_metadata = def_logoup.get_viewer_metadata()
+    except Exception as e:
+        logger.debug(f"提取游标元数据失败: {e}")
+
     # 2. 如果分步时间旅行当前语句为前置参数变量声明，尚未生成几何实体
     if part is None:
         duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
+        if cursor_metadata is not None:
+            # 用户执行了 LogoUp 游标移动等操作，虽未生成三维实体但需在视口呈现游标与轨迹
+            return {
+                "status": "success",
+                "execution_time_ms": duration_ms,
+                "mesh": {"cursor_metadata": cursor_metadata},
+                "cursor_metadata": cursor_metadata,
+                "steps": steps,
+                "current_step": current_step,
+                "total_steps": len(steps),
+                "stdout": captured_stdout,
+            }
         return {
             "status": "pending_geometry",
             "execution_time_ms": duration_ms,
             "mesh": None,
+            "cursor_metadata": None,
             "steps": steps,
             "current_step": current_step,
             "total_steps": len(steps),
@@ -166,6 +189,8 @@ async def render_cad(req: RenderRequest):
             color=req.color,
             alpha=req.alpha
         )
+        if cursor_metadata is not None:
+            mesh_data["cursor_metadata"] = cursor_metadata
     except Exception as e:
         logger.error(f"几何网格化序列化失败: {e}", exc_info=True)
         return {
@@ -174,6 +199,7 @@ async def render_cad(req: RenderRequest):
             "detail": f"几何体网格化生成失败: {e}",
             "stdout": captured_stdout,
             "mesh": None,
+            "cursor_metadata": cursor_metadata,
             "steps": steps,
             "current_step": current_step,
             "total_steps": len(steps),
@@ -186,6 +212,7 @@ async def render_cad(req: RenderRequest):
         "status": "success",
         "execution_time_ms": duration_ms,
         "mesh": mesh_data,
+        "cursor_metadata": cursor_metadata,
         "steps": steps,
         "current_step": current_step,
         "total_steps": len(steps),

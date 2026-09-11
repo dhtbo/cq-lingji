@@ -619,8 +619,8 @@ export function registerLogoUp3DGenerator() {
   };
 
   pythonGenerator.forBlock["logoup_torus"] = function (block) {
-    const r1 = block.getFieldValue("MAJOR_RADIUS");
-    const r2 = block.getFieldValue("MINOR_RADIUS");
+    const r1 = pythonGenerator.valueToCode(block, "MAJOR_RADIUS", 0) || block.getFieldValue("MAJOR_RADIUS") || "10";
+    const r2 = pythonGenerator.valueToCode(block, "MINOR_RADIUS", 0) || block.getFieldValue("MINOR_RADIUS") || "4";
     return `torus(${r1}, ${r2})\n`;
   };
 

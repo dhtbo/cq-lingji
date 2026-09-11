@@ -14,6 +14,7 @@ export interface RenderResult {
   status: "success" | "error";
   execution_time_ms: number;
   mesh: any;
+  cursor_metadata?: any;
   steps?: StepInfo[];
   current_step?: number;
   total_steps?: number;

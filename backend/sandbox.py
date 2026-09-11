@@ -1172,14 +1172,13 @@ def execute_cq_sandboxed(
         logger.info(f"在局部变量 '{target_name}' 中找到草图实体")
         return target_sketch, steps, actual_step, captured_stdout
 
-    # 优先级 3.5: 检查全局默认 LogoUp3D 画布中是否构建了 3D 实体或草图
+    # 优先级 3.5: 检查全局默认 LogoUp3D 画布中是否构建了 3D 实体、草图线框或游标位移
     try:
         default_logoup = logoup3d.get_default_logoup()
-        if default_logoup.solids or default_logoup.current_sketch_faces:
+        if default_logoup.has_activity():
             logoup_part = default_logoup.to_part()
-            if logoup_part is not None:
-                logger.info("在全局 LogoUp3D 引擎中找到几何实体")
-                return logoup_part, steps, actual_step, captured_stdout
+            logger.info("在全局 LogoUp3D 引擎中找到几何实体或活跃状态")
+            return logoup_part, steps, actual_step, captured_stdout
     except Exception as e:
         logger.debug(f"检查默认 LogoUp3D 模型失败: {e}")
 

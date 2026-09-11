@@ -39,6 +39,7 @@ import {
   Circle,
 } from "lucide-react";
 import { StepInfo } from "@/lib/api";
+import { updateLogoUpOverlay } from "./logoupOverlay";
 
 export interface PickedElements {
   pickTab: "face" | "edge" | "vertex";
@@ -881,7 +882,21 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
         theme: theme,
       };
 
-      display.viewer.render(data, renderOptions, viewerOptions);
+      // 仅当包含有效 parts 实体或形状集合时才执行原生网格装载
+      if (data.parts || data.shapes) {
+        display.viewer.render(data, renderOptions, viewerOptions);
+      }
+
+      // 挂载 / 刷新 LogoUp 专属视口图层 (三维游标、方向指示箭头、草图平面、未填充线框)
+      const scene = display.viewer.rendered?.scene;
+      const camera = display.viewer.rendered?.camera?.camera || display.viewer.rendered?.camera;
+      const renderer = display.viewer.rendered?.renderer;
+      if (scene) {
+        updateLogoUpOverlay(scene, data.cursor_metadata || null);
+        if (renderer && camera) {
+          renderer.render(scene, camera);
+        }
+      }
 
       // 视口居中聚焦保证
       setTimeout(() => {
@@ -903,6 +918,10 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
         renderMesh(displayRef.current, meshData);
       } else {
         try {
+          const scene = displayRef.current.viewer.rendered?.scene;
+          if (scene) {
+            updateLogoUpOverlay(scene, null);
+          }
           displayRef.current.viewer.clear();
         } catch (e) {
           console.error("清空 3D 视口失败:", e);

@@ -56,6 +56,12 @@ class LogoUp3D:
         self.current_sketch_faces: List[Any] = []
         self.last_sketch_face: Optional[Any] = None
 
+        # 轨迹与草图线框状态 (对标图 2 游标指示与未填充草图线框)
+        self.trail_segments: List[Dict[str, Any]] = []
+        self.pending_sketch_wires: List[Any] = []
+        self.last_sketch_wire: Optional[Any] = None
+        self.is_active: bool = False
+
         # 3D 实体构建状态
         self.current_color: str = "#3b82f6"
         self.subtract_mode: bool = False
@@ -65,6 +71,18 @@ class LogoUp3D:
         self.state_stack: List[Dict[str, Any]] = []
 
         return self
+
+    def _record_step(self, old_pos: Vector, new_pos: Vector, dir_vec: Vector):
+        """记录游标空间位移轨迹段，供视口渲染前进方向指示箭头序列"""
+        self.is_active = True
+        delta = new_pos - old_pos
+        if delta.length > 1e-4:
+            self.trail_segments.append({
+                "start": [round(old_pos.X, 3), round(old_pos.Y, 3), round(old_pos.Z, 3)],
+                "end": [round(new_pos.X, 3), round(new_pos.Y, 3), round(new_pos.Z, 3)],
+                "dir": [round(dir_vec.X, 4), round(dir_vec.Y, 4), round(dir_vec.Z, 4)],
+                "length": round(delta.length, 3),
+            })
 
     def __enter__(self) -> LogoUp3D:
         return self
@@ -122,20 +140,20 @@ class LogoUp3D:
     def go(self, distance: float) -> LogoUp3D:
         """向前移动 (GO) 指定距离 (毫米)"""
         d = float(distance)
-        # 在当前草图平面内沿 heading 方向移动
+        old_p = Vector(self.pos)
         self.pos = self.pos + self.heading * d
+        self._record_step(old_p, self.pos, self.heading)
         if self.is_drawing:
-            # 记录相对于当前草图原点的投影坐标
             local_p = self.current_plane.to_local_coords(self.pos)
             self.current_path_points.append(local_p)
         return self
 
     def turn(self, deg: float) -> LogoUp3D:
         """顺时针旋转 (TURN) ↷ 指定角度 (度)"""
-        # 顺时针旋转：绕当前 up 轴负向旋转
         angle = float(deg)
         self.heading = _rot_vector(self.heading, self.up_dir, -angle).normalized()
         self.right = self.heading.cross(self.up_dir).normalized()
+        self.is_active = True
         return self
 
     def turn_left(self, deg: float) -> LogoUp3D:
@@ -145,7 +163,11 @@ class LogoUp3D:
     def goto(self, x: float, y: float) -> LogoUp3D:
         """移动到当前草平面的局部坐标 (GOTO)"""
         lx, ly = float(x), float(y)
+        old_p = Vector(self.pos)
         self.pos = self.current_plane.to_world_coords(Vector(lx, ly, 0.0))
+        delta = self.pos - old_p
+        step_dir = delta.normalized() if delta.length > 1e-5 else self.heading
+        self._record_step(old_p, self.pos, step_dir)
         if self.is_drawing:
             self.current_path_points.append(Vector(lx, ly, 0.0))
         return self
@@ -155,32 +177,61 @@ class LogoUp3D:
         if self.is_drawing and len(self.current_path_points) > 2:
             start_p = self.current_path_points[0]
             self.current_path_points.append(start_p)
+            old_p = Vector(self.pos)
             self.pos = self.current_plane.to_world_coords(start_p)
+            delta = self.pos - old_p
+            step_dir = delta.normalized() if delta.length > 1e-5 else self.heading
+            self._record_step(old_p, self.pos, step_dir)
         return self
 
     def done(self) -> LogoUp3D:
         """完成当前图形 (DONE) 并生成闭合二维截面"""
+        return self.fill()
+
+    def fill(self) -> LogoUp3D:
+        """填充上笔的环 (FILL)：将前置未填充的平面线框 (Wire) 填充为实心面 (Face)，随后可进行拉伸"""
+        # 1. 优先填充刚刚生成的平面构件线框
+        if self.last_sketch_wire is not None:
+            try:
+                face = b3d.make_face(self.last_sketch_wire)
+                self.current_sketch_faces.append(face)
+                self.last_sketch_face = face
+                if self.last_sketch_wire in self.pending_sketch_wires:
+                    self.pending_sketch_wires.remove(self.last_sketch_wire)
+                self.last_sketch_wire = None
+                return self
+            except Exception:
+                pass
+
+        # 2. 其次填充手动画笔 draw() 勾勒的折线线框
         if self.is_drawing and len(self.current_path_points) >= 3:
             try:
-                # 在局部平面构建 Polyline 线框并填充面
                 pts = [(p.X, p.Y) for p in self.current_path_points]
                 if pts[0] != pts[-1]:
                     pts.append(pts[0])
                 poly = b3d.Polyline(pts)
-                f = b3d.make_face(poly)
-                # 定位到世界平面
-                world_face = self.current_plane * f
-                self.current_sketch_faces.append(world_face)
-                self.last_sketch_face = world_face
+                world_wire = self.current_plane * poly.wire()
+                face = b3d.make_face(world_wire)
+                self.current_sketch_faces.append(face)
+                self.last_sketch_face = face
             except Exception:
                 pass
-        self.is_drawing = False
-        self.current_path_points = []
-        return self
+            self.is_drawing = False
+            self.current_path_points = []
+            return self
 
-    def fill(self) -> LogoUp3D:
-        """填充上笔的环 (FILL)"""
-        return self.done()
+        # 3. 兜底填充 pending_sketch_wires 中最后一个未填充线框
+        if self.pending_sketch_wires:
+            try:
+                wire = self.pending_sketch_wires.pop()
+                face = b3d.make_face(wire)
+                self.current_sketch_faces.append(face)
+                self.last_sketch_face = face
+                self.last_sketch_wire = None
+            except Exception:
+                pass
+
+        return self
 
     def width(self, w: float) -> LogoUp3D:
         """笔画宽度 (WIDTH)"""
@@ -270,49 +321,62 @@ class LogoUp3D:
     # 4. 平面构件 (2D Components)
     # =========================================================================
 
-    def _add_2d_shape(self, shape_2d: Any) -> LogoUp3D:
-        """将 2D 形状依附于当前工作平面并设为待拉伸几何体"""
-        world_shape = self.current_plane * shape_2d
-        self.current_sketch_faces.append(world_shape)
-        self.last_sketch_face = world_shape
+    def _add_2d_wire(self, shape_or_wire: Any) -> LogoUp3D:
+        """
+        将 2D 轮廓依附于当前工作平面，作为未填充草图线框 (Wire) 记录。
+        遵从 LogoUp 规范：平面构件仅产出未填充线框，需显式执行 fill() 后才形成实心 Face 并可拉伸。
+        """
+        target_wire = shape_or_wire
+        if hasattr(shape_or_wire, "wire") and callable(shape_or_wire.wire):
+            target_wire = shape_or_wire.wire()
+        elif hasattr(shape_or_wire, "wires") and callable(shape_or_wire.wires):
+            ws = shape_or_wire.wires()
+            if ws:
+                target_wire = ws[0]
+
+        world_wire = self.current_plane * target_wire
+        self.pending_sketch_wires.append(world_wire)
+        self.last_sketch_wire = world_wire
+        self.last_sketch_face = None  # 明确置空，未填充前不可直接拉伸
+        self.is_active = True
         return self
 
     def polygon(self, sides: int, radius: float) -> LogoUp3D:
-        """多边形 边数 [sides] 外接圆半径 [radius]"""
+        """多边形 边数 [sides] 外接圆半径 [radius] (未填充线框)"""
         n = max(3, int(sides))
         r = max(0.1, float(radius))
-        return self._add_2d_shape(b3d.RegularPolygon(radius=r, side_count=n))
+        return self._add_2d_wire(b3d.RegularPolygon(radius=r, side_count=n))
 
     def circle(self, radius: float) -> LogoUp3D:
-        """圆 半径 [radius]"""
-        return self._add_2d_shape(b3d.Circle(radius=max(0.1, float(radius))))
+        """圆 半径 [radius] (未填充线框)"""
+        return self._add_2d_wire(b3d.Circle(radius=max(0.1, float(radius))))
 
     def rect(self, length: float, width: float) -> LogoUp3D:
-        """矩形 长 [length] 宽 [width]"""
-        return self._add_2d_shape(b3d.Rectangle(width=float(length), height=float(width)))
+        """矩形 长 [length] 宽 [width] (未填充线框)"""
+        return self._add_2d_wire(b3d.Rectangle(width=float(length), height=float(width)))
 
     def square(self, size: float) -> LogoUp3D:
-        """正方形 边长 [size]"""
+        """正方形 边长 [size] (未填充线框)"""
         return self.rect(size, size)
 
     def rounded_rect(self, length: float, width: float, radius: float) -> LogoUp3D:
-        """圆角矩形 长 [length] 宽 [width] 倒角半径 [radius]"""
+        """圆角矩形 长 [length] 宽 [width] 倒角半径 [radius] (未填充线框)"""
         l = max(0.2, float(length))
         w = max(0.2, float(width))
         max_r = min(l, w) * 0.49
         safe_r = max(0.01, min(float(radius), max_r))
-        return self._add_2d_shape(b3d.RectangleRounded(width=l, height=w, radius=safe_r))
+        return self._add_2d_wire(b3d.RectangleRounded(width=l, height=w, radius=safe_r))
 
     def rounded_square(self, size: float, radius: float) -> LogoUp3D:
-        """圆角方形 边长 [size] 倒角半径 [radius]"""
+        """圆角方形 边长 [size] 倒角半径 [radius] (未填充线框)"""
         return self.rounded_rect(size, size, radius)
 
     def ellipse(self, a: float, b: float) -> LogoUp3D:
-        """椭圆 半长径 [a] 半短径 [b]"""
-        return self._add_2d_shape(b3d.Ellipse(x_radius=float(a), y_radius=float(b)))
+        """椭圆 半长径 [a] 半短径 [b] (未填充线框)"""
+        return self._add_2d_wire(b3d.Ellipse(x_radius=float(a), y_radius=float(b)))
 
     def star(self, num_points: int, outer_radius: float, inner_radius: Optional[float] = None) -> LogoUp3D:
-        """星形 角数 [num_points] 外接圆半径 [outer_radius]"""
+        """星形 角数 [num_points] 外接圆半径 [outer_radius] (未填充线框)"""
         n = max(3, int(num_points))
         ro = max(0.2, float(outer_radius))
         ri = float(inner_radius) if inner_radius is not None else ro * 0.45
@@ -323,23 +387,22 @@ class LogoUp3D:
             pts.append((r_cur * math.cos(ang), r_cur * math.sin(ang)))
         pts.append(pts[0])
         star_poly = b3d.Polyline(pts)
-        return self._add_2d_shape(b3d.make_face(star_poly))
+        return self._add_2d_wire(star_poly)
 
     def five_star(self, outer_radius: float) -> LogoUp3D:
-        """五角星 外接圆半径 [outer_radius]"""
+        """五角星 外接圆半径 [outer_radius] (未填充线框)"""
         return self.star(5, outer_radius)
 
     def six_star(self, outer_radius: float) -> LogoUp3D:
-        """六角星 外接圆半径 [outer_radius]"""
+        """六角星 外接圆半径 [outer_radius] (未填充线框)"""
         return self.star(6, outer_radius)
 
     def four_star(self, outer_radius: float) -> LogoUp3D:
-        """四芒星 外接圆半径 [outer_radius]"""
+        """四芒星 外接圆半径 [outer_radius] (未填充线框)"""
         return self.star(4, outer_radius, inner_radius=float(outer_radius) * 0.25)
 
     def egg(self, rx: float, ry: float) -> LogoUp3D:
-        """蛋形 (卵形线) 半横径 [rx] 半纵径 [ry]"""
-        # 卵形几何：上圆小、下圆大的平滑复合椭圆
+        """蛋形 (卵形线) 半横径 [rx] 半纵径 [ry] (未填充线框)"""
         rx_val, ry_val = float(rx), float(ry)
         pts = []
         steps = 60
@@ -349,11 +412,12 @@ class LogoUp3D:
             px = rx_val * math.cos(theta) * k
             py = ry_val * math.sin(theta)
             pts.append((px, py))
+        pts.append(pts[0])
         poly = b3d.Polyline(pts)
-        return self._add_2d_shape(b3d.make_face(poly))
+        return self._add_2d_wire(poly)
 
     def spirograph(self, R: float, r: float, d: float, angle_deg: float = 1080) -> LogoUp3D:
-        """万花尺线 (Spirograph) 外径 [R] 内径 [r] 偏移 [d] 角度 [angle_deg]"""
+        """万花尺线 (Spirograph) 外径 [R] 内径 [r] 偏移 [d] 角度 [angle_deg] (未填充线框)"""
         R_val = float(R)
         r_val = max(0.1, float(r))
         d_val = float(d)
@@ -367,7 +431,7 @@ class LogoUp3D:
             pts.append((x, y))
         pts.append(pts[0])
         poly = b3d.Polyline(pts)
-        return self._add_2d_shape(b3d.make_face(poly))
+        return self._add_2d_wire(poly)
 
     # =========================================================================
     # 5. 三维绘图与游标空间控制 (3D Drawing & Cursor)
@@ -376,7 +440,9 @@ class LogoUp3D:
     def up(self, distance: float) -> LogoUp3D:
         """向上移动 (UP) [distance] 毫米 (沿当前天顶法向移动)"""
         d = float(distance)
+        old_p = Vector(self.pos)
         self.pos = self.pos + self.up_dir * d
+        self._record_step(old_p, self.pos, self.up_dir)
         return self
 
     def jump(self, distance: float) -> LogoUp3D:
@@ -387,6 +453,8 @@ class LogoUp3D:
         """开始三维实体 (BODY)"""
         self.current_sketch_faces = []
         self.last_sketch_face = None
+        self.pending_sketch_wires = []
+        self.last_sketch_wire = None
         return self
 
     def color(self, color_name: str) -> LogoUp3D:
@@ -418,6 +486,7 @@ class LogoUp3D:
         angle = float(deg)
         self.heading = _rot_vector(self.heading, self.right, angle).normalized()
         self.up_dir = self.right.cross(self.heading).normalized()
+        self.is_active = True
         return self
 
     def roll(self, deg: float) -> LogoUp3D:
@@ -425,21 +494,34 @@ class LogoUp3D:
         angle = float(deg)
         self.up_dir = _rot_vector(self.up_dir, self.heading, angle).normalized()
         self.right = self.heading.cross(self.up_dir).normalized()
+        self.is_active = True
         return self
 
     def move(self, dx: float, dy: float, dz: float) -> LogoUp3D:
         """三维游标坐标增加 (MOVE) [dx, dy, dz] 毫米"""
-        self.pos = self.pos + Vector(float(dx), float(dy), float(dz))
+        old_p = Vector(self.pos)
+        delta = Vector(float(dx), float(dy), float(dz))
+        self.pos = self.pos + delta
+        step_dir = delta.normalized() if delta.length > 1e-5 else self.heading
+        self._record_step(old_p, self.pos, step_dir)
         return self
 
     def moveto(self, x: float, y: float, z: float) -> LogoUp3D:
         """三维游标移动到 (MOVETO) 指定绝对坐标"""
+        old_p = Vector(self.pos)
         self.pos = Vector(float(x), float(y), float(z))
+        delta = self.pos - old_p
+        step_dir = delta.normalized() if delta.length > 1e-5 else self.heading
+        self._record_step(old_p, self.pos, step_dir)
         return self
 
     def shift(self, dx: float, dy: float) -> LogoUp3D:
         """草平面平移 (SHIFT) [dx, dy] 毫米"""
-        self.pos = self.pos + self.right * float(dx) + self.heading * float(dy)
+        old_p = Vector(self.pos)
+        delta = self.right * float(dx) + self.heading * float(dy)
+        self.pos = self.pos + delta
+        step_dir = delta.normalized() if delta.length > 1e-5 else self.heading
+        self._record_step(old_p, self.pos, step_dir)
         return self
 
     def subtract(self, enable: bool = True) -> LogoUp3D:
@@ -472,6 +554,7 @@ class LogoUp3D:
                 pass
         else:
             self.solids.append(solid_obj)
+        self.is_active = True
         return self
 
     def extrude(self, height: float) -> LogoUp3D:
@@ -497,13 +580,38 @@ class LogoUp3D:
         return self
 
     def pyramid(self, height: float) -> LogoUp3D:
-        """锥拉伸 (PYRAMID) 高 [height] 毫米"""
+        """锥拉伸 (PYRAMID) 高 [height] 毫米：生成数学严格尖顶棱锥或圆锥"""
         h = float(height)
         if self.last_sketch_face is not None and abs(h) > 1e-4:
             try:
-                solid = b3d.extrude(self.last_sketch_face, amount=h, taper=15)
+                base_face = self.last_sketch_face
+                edges = base_face.edges()
+                is_circle = (len(edges) == 1 and edges[0].geom_type.name in ["CIRCLE", "ELLIPSE"])
+                normal = self.up_dir.normalized()
+
+                if is_circle:
+                    r = edges[0].radius if hasattr(edges[0], "radius") else (base_face.area / math.pi) ** 0.5
+                    c = base_face.center()
+                    h_mag = abs(h)
+                    eff_norm = normal if h >= 0 else -normal
+                    cone = b3d.Cone(bottom_radius=r, top_radius=0.0, height=h_mag)
+                    plane = Plane(origin=c, z_dir=eff_norm)
+                    solid = plane * cone
+                else:
+                    center = base_face.center()
+                    apex = center + normal * h
+                    wire = base_face.outer_wire() if hasattr(base_face, "outer_wire") else base_face.wires()[0]
+                    side_faces = []
+                    for edge in wire.edges():
+                        p1 = edge.start_point()
+                        p2 = edge.end_point()
+                        tri_wire = Wire.make_polygon([p1, p2, apex, p1])
+                        side_faces.append(Face(tri_wire))
+                    shell = b3d.Shell([base_face] + side_faces)
+                    solid = Solid(shell)
+
                 self._integrate_solid(solid)
-            except Exception:
+            except Exception as e:
                 pass
         return self
 
@@ -555,13 +663,23 @@ class LogoUp3D:
         return self._integrate_solid(sph)
 
     def pyramid_solid(self, sides: int, radius: float, height: float) -> LogoUp3D:
-        """棱锥 边数 [sides] 半径 [radius] 高 [height]"""
+        """棱锥 边数 [sides] 半径 [radius] 高 [height] (严格尖顶正多棱锥)"""
         n = max(3, int(sides))
         r, h = max(0.1, float(radius)), float(height)
         base_poly = b3d.RegularPolygon(radius=r, side_count=n)
-        pyr = b3d.extrude(base_poly, amount=h, taper=30)
-        world_pyr = self.current_plane * pyr
-        return self._integrate_solid(world_pyr)
+        base_face = self.current_plane * base_poly.faces()[0]
+        center = base_face.center()
+        apex = center + self.up_dir.normalized() * h
+        wire = base_face.outer_wire()
+        side_faces = []
+        for edge in wire.edges():
+            p1 = edge.start_point()
+            p2 = edge.end_point()
+            tri_wire = Wire.make_polygon([p1, p2, apex, p1])
+            side_faces.append(Face(tri_wire))
+        shell = b3d.Shell([base_face] + side_faces)
+        solid = Solid(shell)
+        return self._integrate_solid(solid)
 
     def torus(self, major_radius: float, minor_radius: float) -> LogoUp3D:
         """圆环 大圆半径 [major_radius] 小圆半径 [minor_radius]"""
@@ -571,18 +689,83 @@ class LogoUp3D:
         return self._integrate_solid(world_torus)
 
     # =========================================================================
-    # 8. 导出最终 3D 几何实体 (给沙箱与 Three.js 视口)
+    # 8. 导出最终 3D 几何实体与视口元数据 (给沙箱与 Three.js 视口)
     # =========================================================================
 
+    def has_activity(self) -> bool:
+        """检查 LogoUp 引擎是否有绘制、位移或实体构建活动"""
+        return (
+            bool(self.solids)
+            or bool(self.current_sketch_faces)
+            or bool(self.pending_sketch_wires)
+            or bool(self.trail_segments)
+            or self.is_active
+            or self.pos.length > 1e-4
+        )
+
+    def get_viewer_metadata(self) -> Dict[str, Any]:
+        """
+        输出提供给 Three.js 视口渲染的游标、方向指示箭头、草图工作基准面与草图线框元数据
+        """
+        wire_polygons = []
+        for w in self.pending_sketch_wires:
+            try:
+                # 离散化线框提取折线坐标点
+                discr = w.discretize(deflection=0.1)
+                wire_polygons.append([[round(p.X, 3), round(p.Y, 3), round(p.Z, 3)] for p in discr])
+            except Exception:
+                try:
+                    wire_polygons.append([[round(v.X, 3), round(v.Y, 3), round(v.Z, 3)] for v in w.vertices()])
+                except Exception:
+                    pass
+
+        return {
+            "pos": [round(self.pos.X, 3), round(self.pos.Y, 3), round(self.pos.Z, 3)],
+            "heading": [round(self.heading.X, 4), round(self.heading.Y, 4), round(self.heading.Z, 4)],
+            "up_dir": [round(self.up_dir.X, 4), round(self.up_dir.Y, 4), round(self.up_dir.Z, 4)],
+            "right": [round(self.right.X, 4), round(self.right.Y, 4), round(self.right.Z, 4)],
+            "plane": {
+                "origin": [round(self.pos.X, 3), round(self.pos.Y, 3), round(self.pos.Z, 3)],
+                "x_dir": [round(self.right.X, 4), round(self.right.Y, 4), round(self.right.Z, 4)],
+                "y_dir": [round(self.heading.X, 4), round(self.heading.Y, 4), round(self.heading.Z, 4)],
+                "normal": [round(self.up_dir.X, 4), round(self.up_dir.Y, 4), round(self.up_dir.Z, 4)],
+            },
+            "trails": self.trail_segments,
+            "pending_sketch_wires": wire_polygons,
+            "has_solids": len(self.solids) > 0,
+            "has_sketch": self.last_sketch_face is not None or len(self.pending_sketch_wires) > 0,
+            "is_active": self.has_activity(),
+        }
+
     def to_part(self) -> Any:
-        """输出最终装配成的 3D Solid / Compound"""
-        if not self.solids:
-            if self.current_sketch_faces:
-                return self.current_sketch_faces[-1]
-            return b3d.Sphere(radius=1.0).locate(Location(self.pos))
-        if len(self.solids) == 1:
-            return self.solids[0]
-        return Compound(children=self.solids)
+        """输出最终装配成的 3D Solid / Compound / Wire / 轨迹线"""
+        if self.solids:
+            if len(self.solids) == 1:
+                return self.solids[0]
+            return Compound(children=self.solids)
+        if self.current_sketch_faces:
+            if len(self.current_sketch_faces) == 1:
+                return self.current_sketch_faces[0]
+            return Compound(children=self.current_sketch_faces)
+        if self.pending_sketch_wires:
+            if len(self.pending_sketch_wires) == 1:
+                return self.pending_sketch_wires[0]
+            return Compound(children=self.pending_sketch_wires)
+        if self.trail_segments:
+            try:
+                edges = []
+                for t in self.trail_segments:
+                    p1 = Vector(*t["start"])
+                    p2 = Vector(*t["end"])
+                    if (p2 - p1).length > 1e-4:
+                        edges.append(Edge.make_line(p1, p2))
+                if edges:
+                    return Compound(children=edges)
+            except Exception:
+                pass
+        if self.is_active or self.pos.length > 1e-4:
+            return b3d.Sphere(radius=0.01).locate(Location(self.pos))
+        return None
 
     @property
     def part(self) -> Any:
@@ -768,3 +951,9 @@ def torus(major_radius: float, minor_radius: float) -> LogoUp3D:
 
 def get_model() -> Any:
     return _DEFAULT_LOGOUP.to_part()
+
+def get_viewer_metadata() -> Dict[str, Any]:
+    return _DEFAULT_LOGOUP.get_viewer_metadata()
+
+def has_activity() -> bool:
+    return _DEFAULT_LOGOUP.has_activity()
