@@ -42,6 +42,13 @@ try:
 except ImportError:
     from turtle3d import Turtle3D
 
+try:
+    from backend.logoup3d import LogoUp3D, get_default_logoup
+    import backend.logoup3d as logoup3d
+except ImportError:
+    from logoup3d import LogoUp3D, get_default_logoup
+    import logoup3d
+
 logger = logging.getLogger(__name__)
 
 # 允许导入的白名单模块（数学计算、几何造型、算法优化与安全工具库）
@@ -50,6 +57,10 @@ ALLOWED_MODULES = {
     "cq",
     "build123d",
     "b3d",
+    "logoup3d",
+    "backend.logoup3d",
+    "turtle3d",
+    "backend.turtle3d",
     "math",
     "random",
     "numpy",
@@ -77,9 +88,9 @@ def _safe_import(name: str, *args: Any, **kwargs: Any) -> Any:
     运行时受限的 import 函数，作为 AST 静态校验之外的双重安全防线
     """
     base_name = name.split(".")[0]
-    if base_name in ALLOWED_MODULES:
+    if name in ALLOWED_MODULES or base_name in ALLOWED_MODULES:
         return __import__(name, *args, **kwargs)
-    raise ImportError(f"安全沙箱禁止导入模块: '{name}'。仅允许: {', '.join(ALLOWED_MODULES)}")
+    raise ImportError(f"安全沙箱禁止导入模块: '{name}'。仅允许: {', '.join(sorted(ALLOWED_MODULES))}")
 
 # 允许访问的合法魔术属性与方法（排除 __class__, __subclasses__, __globals__, __code__, __dict__, __bases__, __mro__ 等内部反射逃逸属性）
 ALLOWED_MAGIC_ATTRS = {
@@ -252,7 +263,12 @@ class SecurityValidator(ast.NodeVisitor):
 
     def _is_allowed(self, mod_name: str) -> bool:
         base = mod_name.split(".")[0]
-        return (base in ALLOWED_MODULES) or (base in self.project_modules) or (mod_name in self.project_modules)
+        return (
+            (mod_name in ALLOWED_MODULES)
+            or (base in ALLOWED_MODULES)
+            or (base in self.project_modules)
+            or (mod_name in self.project_modules)
+        )
 
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
@@ -466,9 +482,9 @@ def _unwrap_geo(val: Any) -> Any:
                 pass
         return res
 
-    if isinstance(val, Turtle3D):
+    if isinstance(val, (Turtle3D, LogoUp3D)):
         try:
-            return val.part
+            return val.to_part() if hasattr(val, "to_part") else val.part
         except Exception:
             return None
 
@@ -479,7 +495,7 @@ def _is_geo_obj(val: Any) -> bool:
     """
     判断对象是否为合法的 CAD 几何对象或构造器
     """
-    if isinstance(val, Turtle3D):
+    if isinstance(val, (Turtle3D, LogoUp3D)):
         return True
     if isinstance(val, b3d.BuildPart):
         try:
@@ -692,7 +708,7 @@ def _run_script_worker(
             return _load_virtual_module(base_name)
 
         # 4. 校验白名单标准/第三方库
-        if base_name in ALLOWED_MODULES:
+        if name in ALLOWED_MODULES or base_name in ALLOWED_MODULES:
             return __import__(name, globals, locals, fromlist, level)
 
         raise ImportError(f"安全沙箱禁止导入模块: '{name}'。仅允许: {', '.join(sorted(ALLOWED_MODULES))}")
@@ -708,6 +724,13 @@ def _run_script_worker(
         if not name.startswith("_") and name not in FORBIDDEN_NAMES
     }
 
+    # 导出 logoup3d 模块的顶层指令 (draw, go, turn, rect, done, extrude, up 等)
+    logoup_symbols = {
+        name: getattr(logoup3d, name)
+        for name in dir(logoup3d)
+        if not name.startswith("_")
+    }
+
     global_env = {
         "__name__": "__main__",
         "__doc__": None,
@@ -719,13 +742,22 @@ def _run_script_worker(
         "math": math,
         "random": random,
         "Turtle3D": Turtle3D,
+        "LogoUp3D": LogoUp3D,
+        "logoup3d": logoup3d,
         "insert": getattr(b3d, "insert", getattr(b3d, "add", None)),
         "ocp_vscode": ocp_adapter,
         "vis": cq_vis_adapter,
         **b3d_symbols,
+        **logoup_symbols,
         **custom_cq_funcs,
     }
     local_env: Dict[str, Any] = {}
+
+    # 重置默认 LogoUp3D 画布状态
+    try:
+        logoup3d.reset()
+    except Exception:
+        pass
 
     temp_dir = None
     old_cwd = None
@@ -1139,6 +1171,17 @@ def execute_cq_sandboxed(
         target_name, target_sketch, _ = found_sketches[-1]
         logger.info(f"在局部变量 '{target_name}' 中找到草图实体")
         return target_sketch, steps, actual_step, captured_stdout
+
+    # 优先级 3.5: 检查全局默认 LogoUp3D 画布中是否构建了 3D 实体或草图
+    try:
+        default_logoup = logoup3d.get_default_logoup()
+        if default_logoup.solids or default_logoup.current_sketch_faces:
+            logoup_part = default_logoup.to_part()
+            if logoup_part is not None:
+                logger.info("在全局 LogoUp3D 引擎中找到几何实体")
+                return logoup_part, steps, actual_step, captured_stdout
+    except Exception as e:
+        logger.debug(f"检查默认 LogoUp3D 模型失败: {e}")
 
     # 如果是分步时间旅行回放模式，且当前语句仅为前置参数定义（尚未构建几何对象）
     if step is not None:

@@ -15,8 +15,18 @@ export const CATEGORY_COLORS = {
   MATH: "#8b5cf6",        // 紫色 - 数学运算
   LOOP: "#10b981",        // 绿色 - 循环控制
   VARIABLE: "#f59e0b",    // 琥珀 - 变量
-  PROCEDURE: "#ec4899",   // 粉色 - 函数过程
   TURTLE: "#10b981",      // 翡翠绿 - 3D 空间海龟绘图
+  PROCEDURE: "#ec4899",   // 洋红粉 - 自定义函数
+};
+
+export const LOGOUP_COLORS = {
+  DRAWING_2D: "#00b894",    // 翠绿 - 平面绘图 (GO, TURN, DRAW, DONE, FILL)
+  ADVANCED_2D: "#3b82f6",   // 天蓝 - 平面进阶 (CLOSE, OFFSET, GOTO, SETX, TXTSTAMP)
+  COMPONENTS_2D: "#c026d3", // 品红洋紫 - 平面构件 (多边形, 圆, 星形, 矩形, 蛋形)
+  DRAWING_3D: "#f43f5e",    // 珊瑚红 - 三维绘图 (UP, BODY, COLOR, YAW, PITCH, ROLL, SUBTRACT)
+  ADVANCED_3D: "#8b5cf6",   // 梦幻紫 - 三维进阶 (MOVETO, EXTRUDE, CEXTRUDE, PYRAMID, CAVE)
+  COMPONENTS_3D: "#7c3aed", // 深紫 - 三维构件 (长方体, 棱锥, 圆环, 圆柱)
+  CONTROL: "#f59e0b",       // 暖橙 - 控制流程 (START, PUSH, POP)
 };
 
 export const CQ_TYPES = {

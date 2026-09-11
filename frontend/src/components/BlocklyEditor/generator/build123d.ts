@@ -573,11 +573,14 @@ export function registerBuild123dGenerator() {
   generatorRegistered = true;
 }
 
+import { registerLogoUp3DGenerator } from "./logoup3d";
+
 /**
- * 将 Blockly 工作区转换为规范的 build123d 脚本代码
+ * 将 Blockly 工作区转换为规范的 build123d / LogoUp3D 脚本代码
  */
 export function workspaceToBuild123d(workspace: Blockly.Workspace): string {
   registerBuild123dGenerator();
+  registerLogoUp3DGenerator();
   const rawCode = pythonGenerator.workspaceToCode(workspace);
 
   // 清洗空行并补全标准头部
@@ -587,8 +590,21 @@ export function workspaceToBuild123d(workspace: Blockly.Workspace): string {
   }
 
   let fullCode = "";
+  const hasLogoUp = cleanCode.includes("draw()") ||
+    cleanCode.includes("extrude(") ||
+    cleanCode.includes("go(") ||
+    cleanCode.includes("rect(") ||
+    cleanCode.includes("box(") ||
+    cleanCode.includes("cylinder(") ||
+    cleanCode.includes("push()") ||
+    cleanCode.includes("pop()");
+
   if (!cleanCode.includes("from build123d import *") && !cleanCode.includes("import build123d")) {
-    fullCode += "from build123d import *\n\n";
+    fullCode += "from build123d import *\n";
+  }
+
+  if (hasLogoUp && !cleanCode.includes("from backend.logoup3d import *") && !cleanCode.includes("import logoup3d")) {
+    fullCode += "from backend.logoup3d import *\n\n";
   }
   fullCode += cleanCode;
   if (!fullCode.endsWith("\n")) {

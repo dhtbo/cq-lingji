@@ -6,11 +6,12 @@ import { registerMacroBlocks } from "./macros";
 import { registerCommentBlocks } from "./comments";
 import { registerVariableBlocks } from "./variables";
 import { registerTurtle3DBlocks } from "./turtle3d";
+import { registerLogoUp3DBlocks } from "./logoup3d";
 
 let initialized = false;
 
 /**
- * 注册所有自定义 build123d / CadQuery 积木
+ * 注册所有自定义 build123d / CadQuery / LogoUp 积木
  */
 export function registerAllBuild123dBlocks() {
   if (initialized) return;
@@ -22,6 +23,7 @@ export function registerAllBuild123dBlocks() {
   registerCommentBlocks();
   registerVariableBlocks();
   registerTurtle3DBlocks();
+  registerLogoUp3DBlocks();
   initialized = true;
 }
 
