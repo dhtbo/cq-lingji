@@ -27,10 +27,11 @@ ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 ENV BACKEND_INTERNAL_URL=http://127.0.0.1:8000
 
-# Install system dependencies for OpenCASCADE, OpenGL, and Node.js
+# Install system dependencies for OpenCASCADE, OpenGL, wget (for Coolify healthcheck), and Node.js
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
+    wget \
     libgl1 \
     libglx-mesa0 \
     libegl1 \
@@ -38,12 +39,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean && rm -rf /var/lib/apt/lists/* /root/.npm
 
-# Install Python backend dependencies
+# Install Python backend dependencies (novtk version for minimal size and no vtk bloat)
 COPY backend/requirements.txt /app/backend/requirements.txt
 RUN pip install --no-cache-dir -r /app/backend/requirements.txt \
-    && pip uninstall -y vtk trame-vtk trame trame-components trame-vuetify wslink 2>/dev/null || true \
+    && pip install --no-cache-dir --no-deps cadquery>=2.7.0 \
     && find /usr/local/lib/python3.11 -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true \
     && rm -rf /root/.cache
 
