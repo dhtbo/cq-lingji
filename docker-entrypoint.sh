@@ -7,7 +7,7 @@ BACKEND_PID=$!
 
 echo "2. Waiting for FastAPI backend health check..."
 for i in $(seq 1 30); do
-    if python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health')" 2>/dev/null; then
+    if curl -s http://127.0.0.1:8000/api/v1/health >/dev/null 2>&1; then
         echo "FastAPI backend is ready!"
         break
     fi

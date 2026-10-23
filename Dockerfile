@@ -30,6 +30,7 @@ ENV BACKEND_INTERNAL_URL=http://127.0.0.1:8000
 # Install system dependencies for OpenCASCADE, OpenGL, and Node.js
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    ca-certificates \
     libgl1 \
     libglx-mesa0 \
     libegl1 \
@@ -37,7 +38,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
-    && apt-get purge -y --auto-remove curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python backend dependencies
