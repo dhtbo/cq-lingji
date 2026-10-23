@@ -42,7 +42,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install Python backend dependencies
 COPY backend/requirements.txt /app/backend/requirements.txt
-RUN pip install --no-cache-dir -r /app/backend/requirements.txt
+RUN pip install --no-cache-dir -r /app/backend/requirements.txt \
+    && pip uninstall -y vtk trame-vtk trame trame-components trame-vuetify wslink 2>/dev/null || true \
+    && find /usr/local/lib/python3.11 -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true \
+    && rm -rf /root/.cache
 
 # Copy backend code
 COPY backend/ /app/backend/
