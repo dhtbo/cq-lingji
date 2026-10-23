@@ -120,12 +120,11 @@ export function registerInitializerBlocks() {
             ["零件最左侧面 (Faces <X)", "LEFT_FACE"],
             ["零件最前侧面 (Faces >Y)", "FRONT_FACE"],
             ["零件最后侧面 (Faces <Y)", "BACK_FACE"],
-            ["自定义附着面表达式...", "CUSTOM"],
           ]),
           "PLANE"
         )
         .appendField("实体:")
-        .appendField(new Blockly.FieldTextInput("example"), "PARENT_VAR")
+        .appendField(new Blockly.FieldTextInput("part"), "PARENT_VAR")
         .appendField("别名:")
         .appendField(
           new Blockly.FieldDropdown([
@@ -136,20 +135,13 @@ export function registerInitializerBlocks() {
         )
         .appendField(new Blockly.FieldTextInput("sk"), "VAR_NAME");
 
-      this.appendDummyInput("CUSTOM_INPUT")
-        .appendField("面表达式:")
-        .appendField(
-          new Blockly.FieldTextInput("example.faces().sort_by(Axis.Z)[-1]"),
-          "FACE_EXPR"
-        );
-
       this.appendStatementInput("DO")
         .appendField("草图图元:");
       this.setPreviousStatement(true, null);
       this.setNextStatement(true, null);
       this.setColour(CATEGORY_COLORS.BUILDER);
       this.setTooltip(
-        "build123d 2D 草图容器：附着在指定基准平面或实体拓扑面（如顶面、侧面或自定义面）上绘制草图，供后续拉伸/挖槽成型"
+        "build123d 2D 草图容器：附着在指定基准平面或实体拓扑面（如顶面、底面、前后面、左右侧面）上绘制草图，供后续拉伸/挖槽成型"
       );
     },
   };

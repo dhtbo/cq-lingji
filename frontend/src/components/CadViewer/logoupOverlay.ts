@@ -21,6 +21,8 @@ export interface LogoUpCursorMetadata {
     length: number;
   }>;
   pending_sketch_wires?: Array<Array<[number, number, number]>>;
+  drawing_path?: Array<[number, number, number]>;
+  pen_width?: number;
   has_solids?: boolean;
   has_sketch?: boolean;
   is_active?: boolean;
@@ -61,7 +63,7 @@ function createTextSprite(text: string, color: string): THREE.Sprite {
 /**
  * 构建高保真三维游标 Group (缩小一倍，小巧精致且支持动态旋转姿态对齐)
  */
-function buildCursorGroup(metadata: LogoUpCursorMetadata): THREE.Group {
+function buildCursorGroup(metadata: LogoUpCursorMetadata, cursorScale: number = 1.0): THREE.Group {
   const group = new THREE.Group();
   group.name = "logoup_cursor";
 
@@ -172,83 +174,110 @@ function buildCursorGroup(metadata: LogoUpCursorMetadata): THREE.Group {
   group.setRotationFromMatrix(basisMat);
   group.position.set(...metadata.pos);
 
+  // 7. 屏幕空间恒定尺寸算法：相机缩放时，游标保持恒定屏幕大小，且可自定义尺寸
+  const userScale = Math.max(0.2, cursorScale || 1.0);
+  baseMesh.onBeforeRender = (_renderer, _scene, camera) => {
+    if (camera) {
+      updateCursorAdaptiveScale(group, camera, userScale);
+    }
+  };
+
   return group;
 }
 
 /**
- * 沿轨迹线段构建等间距前进方向指示箭头序列 (严格对标图 2 右上橙色 Chevron 箭头串)
+ * 计算并在相机缩放/漫游时实时更新游标屏幕空间尺寸 (保持恒定显示大小，不随 3D 视图缩放而变大变小)
+ */
+export function updateCursorAdaptiveScale(
+  cursorGroup: THREE.Group,
+  camera: THREE.Camera,
+  userScale: number = 1.0
+) {
+  if (!cursorGroup || !camera) return;
+  const tempPos = new THREE.Vector3();
+  cursorGroup.getWorldPosition(tempPos);
+  let factor = 1.0;
+  if ((camera as any).isPerspectiveCamera) {
+    const pCam = camera as THREE.PerspectiveCamera;
+    const dist = pCam.position.distanceTo(tempPos);
+    // 恒定屏幕占比：约占视口高度的 4%
+    factor = dist * Math.tan(THREE.MathUtils.degToRad(pCam.fov / 2)) * 0.04;
+  } else if ((camera as any).isOrthographicCamera) {
+    const oCam = camera as THREE.OrthographicCamera;
+    factor = ((oCam.top - oCam.bottom) / (oCam.zoom || 1)) * 0.04;
+  }
+  const finalScale = Math.max(0.005, factor * userScale);
+  // 仅在 scale 发生实际微小变化时更新，避免无谓重绘
+  if (Math.abs(cursorGroup.scale.x - finalScale) > 1e-4) {
+    cursorGroup.scale.set(finalScale, finalScale, finalScale);
+    cursorGroup.updateMatrixWorld(true);
+  }
+}
+
+/**
+ * 沿当前游标前进方向构建前向指示箭头虚线 (严格对标图 1：多枚紧凑橙色 Chevron 组成的准星虚线)
+ * 仅用于指示当前游标绘图方向，随游标旋转而旋转，绝不在历史轨迹上留下残留
  */
 function buildDirectionArrowsGroup(metadata: LogoUpCursorMetadata): THREE.Group {
   const group = new THREE.Group();
   group.name = "logoup_direction_arrows";
 
-  if (!metadata.trails || metadata.trails.length === 0) {
-    return group;
-  }
+  const pos = new THREE.Vector3(...metadata.pos);
+  const head = new THREE.Vector3(...metadata.heading).normalize();
+  const up = new THREE.Vector3(...metadata.up_dir).normalize();
+  const right = new THREE.Vector3(...metadata.right).normalize();
 
-  // 构造实心立体 Chevron 箭头几何体 (缩小一倍，与小游标保持协调比例)
+  // 构造精巧实心立体 Chevron 箭头 (对标图 1：小巧精巧、高饱和鲜橙色)
   const arrowShape = new THREE.Shape();
-  const w = 2.4;
-  const h = 3.0;
-  const d = 1.4;
+  const w = 1.4; // 宽度
+  const h = 1.8; // 长度
+  const d = 0.9; // 凹角深度
   arrowShape.moveTo(0, h);
   arrowShape.lineTo(w, 0);
-  arrowShape.lineTo(w * 0.65, 0);
+  arrowShape.lineTo(w * 0.6, 0);
   arrowShape.lineTo(0, h - d);
-  arrowShape.lineTo(-w * 0.65, 0);
+  arrowShape.lineTo(-w * 0.6, 0);
   arrowShape.lineTo(-w, 0);
   arrowShape.closePath();
 
-  // 给予 0.4mm 立体厚度
+  // 0.25mm 薄立体厚度
   const arrowGeo = new THREE.ExtrudeGeometry(arrowShape, {
-    depth: 0.4,
-    bevelEnabled: true,
-    bevelThickness: 0.08,
-    bevelSize: 0.08,
-    bevelSegments: 2,
+    depth: 0.25,
+    bevelEnabled: false,
   });
+
   const arrowMat = new THREE.MeshStandardMaterial({
-    color: 0xf97316, // 对标图 2 纯正鲜橙色
+    color: 0xf97316, // 对标图 1 活力鲜橙色
     roughness: 0.25,
     metalness: 0.1,
     side: THREE.DoubleSide,
   });
 
-  const stepDistance = 4.8; // 间距 4.8mm 呈现优美节奏感
+  // 箭头姿态：局部 Y 轴对齐 head，Z 轴对齐 up，X 轴对齐 right
+  const alignMat = new THREE.Matrix4().makeBasis(right, head, up);
 
-  for (const trail of metadata.trails) {
-    const p1 = new THREE.Vector3(...trail.start);
-    const p2 = new THREE.Vector3(...trail.end);
-    const segVec = p2.clone().sub(p1);
-    const len = segVec.length();
-    if (len < 1.5) continue;
+  // 从游标绿色 Y 轴尖端前方 (约 11mm 处) 开始向前等间距排布 9 个箭头
+  const startOffset = 11.2;
+  const arrowSpacing = 2.2;
+  const numArrows = 9;
 
-    const dir = segVec.clone().normalize();
-    const normal = metadata.plane
-      ? new THREE.Vector3(...metadata.plane.normal).normalize()
-      : new THREE.Vector3(0, 0, 1);
-    const right = dir.clone().cross(normal).normalize();
-    const alignMat = new THREE.Matrix4().makeBasis(right, dir, normal);
-
-    const count = Math.max(1, Math.floor(len / stepDistance));
-    for (let i = 1; i <= count; i++) {
-      const t = i / (count + 1);
-      const pos = p1.clone().lerp(p2, t);
-      pos.add(normal.clone().multiplyScalar(0.2));
-
-      const arrowMesh = new THREE.Mesh(arrowGeo, arrowMat);
-      arrowMesh.setRotationFromMatrix(alignMat);
-      arrowMesh.position.copy(pos);
-      arrowMesh.renderOrder = 100;
-      group.add(arrowMesh);
-    }
+  for (let i = 0; i < numArrows; i++) {
+    const arrowMesh = new THREE.Mesh(arrowGeo, arrowMat);
+    arrowMesh.setRotationFromMatrix(alignMat);
+    // 沿前进方向定位
+    const arrowPos = pos.clone().add(head.clone().multiplyScalar(startOffset + i * arrowSpacing));
+    // 略微抬高 0.05mm 避免重合 Z 冲突
+    arrowPos.add(up.clone().multiplyScalar(0.05));
+    arrowMesh.position.copy(arrowPos);
+    arrowMesh.renderOrder = 150;
+    group.add(arrowMesh);
   }
 
   return group;
 }
 
 /**
- * 构建当前草图工作基准面 (半透明网格工作平面)
+ * 构建当前草图工作基准面 (透明网格工作平面)
  */
 function buildSketchPlaneGroup(metadata: LogoUpCursorMetadata): THREE.Group {
   const group = new THREE.Group();
@@ -290,27 +319,63 @@ function buildSketchPlaneGroup(metadata: LogoUpCursorMetadata): THREE.Group {
 }
 
 /**
- * 构建未填充草图闭合线框 (默认鲜橙色高饱和线框，对标图 3)
+ * 构建未填充草图闭合线框与正在绘制的草图轨迹 (默认鲜橙色高饱和线框，对标图 1 & 图 3)
  */
 function buildPendingWiresGroup(metadata: LogoUpCursorMetadata): THREE.Group {
   const group = new THREE.Group();
   group.name = "logoup_pending_wires";
 
-  if (!metadata.pending_sketch_wires || metadata.pending_sketch_wires.length === 0) {
-    return group;
-  }
+  const sketchOrange = 0xea580c; // 对标图 1 与图 3 高明度鲜橙色
+  const penWidth = metadata.pen_width || 1.0;
 
-  for (const wirePts of metadata.pending_sketch_wires) {
-    if (wirePts.length < 2) continue;
-    const points = wirePts.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
-    const geo = new THREE.BufferGeometry().setFromPoints(points);
-    const mat = new THREE.LineBasicMaterial({
-      color: 0xea580c, // 对标图 3 高明度鲜橙色
-      linewidth: 2,
+  // 辅助函数：生成折线轮廓（不使用 CatmullRomCurve3 样条平滑，避免矩形/正方形等直边与直角变形）
+  const addStrokePolyline = (pts: THREE.Vector3[], isClosed: boolean) => {
+    if (pts.length < 2) return;
+
+    const lineGeo = new THREE.BufferGeometry().setFromPoints(pts);
+    const lineMat = new THREE.LineBasicMaterial({
+      color: sketchOrange,
+      linewidth: Math.max(1, Math.round(penWidth)),
       depthTest: false,
     });
-    const line = new THREE.LineLoop(geo, mat);
+    const line = isClosed ? new THREE.LineLoop(lineGeo, lineMat) : new THREE.Line(lineGeo, lineMat);
+    line.renderOrder = 180;
     group.add(line);
+  };
+
+  // 1. 仅当后端尚未生成 B-Rep 草图面或三维实体时，才兜底渲染待填充闭合线框 (pending_sketch_wires)
+  if (!metadata.has_sketch && !metadata.has_solids && metadata.pending_sketch_wires && metadata.pending_sketch_wires.length > 0) {
+    for (const wirePts of metadata.pending_sketch_wires) {
+      if (wirePts.length < 2) continue;
+      const points = wirePts.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
+      addStrokePolyline(points, true);
+    }
+  }
+
+  // 2. 渲染当前正在落笔绘制但尚未 done() 结算的折线 (drawing_path)
+  if (metadata.drawing_path && metadata.drawing_path.length >= 2) {
+    const points = metadata.drawing_path.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
+    addStrokePolyline(points, false);
+  }
+
+  // 3. 兜底渲染：仅当既没有实体也没有草图面，且没有待填充线框时，才使用位移轨迹段 trails 呈现橙色草图线
+  if (
+    !metadata.has_solids &&
+    !metadata.has_sketch &&
+    (!metadata.pending_sketch_wires || metadata.pending_sketch_wires.length === 0) &&
+    metadata.trails &&
+    metadata.trails.length > 0
+  ) {
+    const trailPoints: THREE.Vector3[] = [];
+    for (const t of metadata.trails) {
+      if (trailPoints.length === 0) {
+        trailPoints.push(new THREE.Vector3(...t.start));
+      }
+      trailPoints.push(new THREE.Vector3(...t.end));
+    }
+    if (trailPoints.length >= 2) {
+      addStrokePolyline(trailPoints, false);
+    }
   }
 
   return group;
@@ -323,6 +388,7 @@ export interface LogoUpOverlayOptions {
   showCursor?: boolean;
   showPlane?: boolean;
   showSketch?: boolean;
+  cursorScale?: number;
 }
 
 /**
@@ -331,7 +397,8 @@ export interface LogoUpOverlayOptions {
 export function updateLogoUpOverlay(
   scene: THREE.Scene,
   metadata: LogoUpCursorMetadata | null,
-  options?: LogoUpOverlayOptions
+  options?: LogoUpOverlayOptions,
+  camera?: THREE.Camera
 ): void {
   if (!scene) return;
 
@@ -345,6 +412,7 @@ export function updateLogoUpOverlay(
   const showCursor = options?.showCursor ?? true;
   const showPlane = options?.showPlane ?? true;
   const showSketch = options?.showSketch ?? true;
+  const cursorScale = options?.cursorScale ?? 1.0;
 
   const overlayGroup = new THREE.Group();
   overlayGroup.name = OVERLAY_GROUP_NAME;
@@ -357,7 +425,11 @@ export function updateLogoUpOverlay(
   }
   if (showCursor) {
     overlayGroup.add(buildDirectionArrowsGroup(metadata));
-    overlayGroup.add(buildCursorGroup(metadata));
+    const cursorGroup = buildCursorGroup(metadata, cursorScale);
+    overlayGroup.add(cursorGroup);
+    if (camera) {
+      updateCursorAdaptiveScale(cursorGroup, camera, cursorScale);
+    }
   }
 
   scene.add(overlayGroup);

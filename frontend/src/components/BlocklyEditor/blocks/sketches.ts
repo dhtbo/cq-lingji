@@ -7,15 +7,18 @@ import { CATEGORY_COLORS, CQ_TYPES } from "./types";
 export function registerSketchBlocks() {
   // --- 语句式 (Scratch 风格垂直堆叠) ---
 
-  // 1. 画矩形
+  // 1. 画矩形 (支持 ValueInput 接入数值阴影块、变量或运算表达式)
   Blockly.Blocks["cq_sketch_rect"] = {
     init: function () {
       this.appendDummyInput()
-        .appendField("✏️ 绘制矩形")
-        .appendField("宽 X:")
-        .appendField(new Blockly.FieldNumber(20, 0.1), "WIDTH")
-        .appendField("高 Y:")
-        .appendField(new Blockly.FieldNumber(20, 0.1), "HEIGHT");
+        .appendField("✏️ 绘制矩形");
+      this.appendValueInput("WIDTH")
+        .setCheck(null)
+        .appendField("宽 X:");
+      this.appendValueInput("HEIGHT")
+        .setCheck(null)
+        .appendField("高 Y:");
+      this.setInputsInline(true);
       this.setPreviousStatement(true, null);
       this.setNextStatement(true, null);
       this.setColour(CATEGORY_COLORS.SKETCH);
@@ -23,13 +26,15 @@ export function registerSketchBlocks() {
     },
   };
 
-  // 2. 画圆形
+  // 2. 画圆形 (支持 ValueInput 接入数值阴影块、变量或运算表达式)
   Blockly.Blocks["cq_sketch_circle"] = {
     init: function () {
       this.appendDummyInput()
-        .appendField("✏️ 绘制圆形")
-        .appendField("半径 R:")
-        .appendField(new Blockly.FieldNumber(10, 0.1), "RADIUS");
+        .appendField("✏️ 绘制圆形");
+      this.appendValueInput("RADIUS")
+        .setCheck(null)
+        .appendField("半径 R:");
+      this.setInputsInline(true);
       this.setPreviousStatement(true, null);
       this.setNextStatement(true, null);
       this.setColour(CATEGORY_COLORS.SKETCH);

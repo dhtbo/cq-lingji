@@ -98,4 +98,19 @@ export function registerLogoUpComponents3DBlocks() {
       this.setTooltip("在当前游标位置生成一个尖顶正圆锥体");
     },
   };
+
+  // 7. 椭球 (严格对标图 media_1789106051952.png: ◓ 椭球 半轴 [15] [10] [10])
+  Blockly.Blocks["logoup_ellipsoid"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("◓ 椭球 半轴")
+        .appendField(new Blockly.FieldNumber(15, 0.1), "RX")
+        .appendField(new Blockly.FieldNumber(10, 0.1), "RY")
+        .appendField(new Blockly.FieldNumber(10, 0.1), "RZ");
+      this.setPreviousStatement(true, null);
+      this.setNextStatement(true, null);
+      this.setColour(LOGOUP_COLORS.COMPONENTS_3D);
+      this.setTooltip("在当前游标位置生成一个椭球体 (◓ 椭球 半轴 15 10 10)");
+    },
+  };
 }

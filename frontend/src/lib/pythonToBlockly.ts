@@ -5,12 +5,14 @@
  */
 
 import * as Blockly from "blockly";
+import type { WorkingMode } from "../components/BlocklyEditor/toolbox";
 
 export interface ParsedBlockDef {
   type: string;
   fields: Record<string, string | number>;
   inputs?: Record<string, ParsedBlockDef>; // 值输入插槽 (对应 ValueInput，例如 AMOUNT, WIDTH, HEIGHT, RADIUS, A, B)
-  children?: ParsedBlockDef[]; // 容器子积木 (对应 Statement Input "DO")
+  children?: ParsedBlockDef[]; // 容器子积木 (对应 Statement Input "DO" 或 "BRANCH")
+  elseChildren?: ParsedBlockDef[]; // 否则分支子积木 (对应 Statement Input "ELSE")
 }
 
 /**
@@ -72,11 +74,20 @@ export function parseExprToBlockDef(expr: string): ParsedBlockDef | null {
     }
   }
 
-  // 4. 函数调用表达式 (如 my_func(a, b))
+  // 4. 函数调用表达式 (如 getx(), gety(), geth(), my_func(a, b))
   const fnMatch = s.match(/^([a-zA-Z_]\w*)\s*\((.*)\)$/);
   if (fnMatch) {
     const fnName = fnMatch[1];
     const argsStr = fnMatch[2].trim();
+    if (fnName === "getx" && !argsStr) {
+      return { type: "logoup_getx", fields: {} };
+    }
+    if (fnName === "gety" && !argsStr) {
+      return { type: "logoup_gety", fields: {} };
+    }
+    if (fnName === "geth" && !argsStr) {
+      return { type: "logoup_geth", fields: {} };
+    }
     // 排除特定非函数标识
     if (!["range", "len"].includes(fnName)) {
       return {
@@ -324,11 +335,11 @@ function splitTopLevelAssignment(line: string): { lhs: string; rhs: string } | n
 }
 
 /**
- * 辅助：提取指定函数调用及其参数字符串与赋值变量名
+ * 辅助：提取指定函数调用及其参数字符串与赋值变量名 (用于 build123d 构造器)
  * 能够精确匹配嵌套括号，避免被内联注释或后续语句干扰
  */
 function extractFunctionCall(line: string, fnName: string): { varName: string; argsStr: string } | null {
-  const regex = new RegExp(`(?:([a-zA-Z_]\\w*)\\s*=\\s*)?${fnName}\\s*\\(`, "i");
+  const regex = new RegExp(`^(?:([a-zA-Z_]\\w*)\\s*=\\s*)?${fnName}\\s*\\(`, "i");
   const match = line.match(regex);
   if (!match || match.index === undefined) return null;
 
@@ -352,6 +363,37 @@ function extractFunctionCall(line: string, fnName: string): { varName: string; a
   if (endIdx === -1) return null;
   const argsStr = line.slice(startIdx, endIdx).trim();
   return { varName, argsStr };
+}
+
+/**
+ * 辅助：严格大小写敏感且行首锚定的 LogoUp 函数调用提取器
+ * 严禁匹配大写 Box(...) 或方法链 part.box(...)，彻底杜绝跨模式串扰
+ */
+function extractLogoUpCall(line: string, fnName: string): { argsStr: string; trailingComment: string } | null {
+  const regex = new RegExp(`^${fnName}\\s*\\(`);
+  const match = line.match(regex);
+  if (!match || match.index === undefined) return null;
+
+  const startIdx = match.index + match[0].length;
+  let depth = 1;
+  let endIdx = -1;
+
+  for (let i = startIdx; i < line.length; i++) {
+    const char = line[i];
+    if (char === "(" || char === "[" || char === "{") depth++;
+    else if (char === ")" || char === "]" || char === "}") {
+      depth--;
+      if (depth === 0) {
+        endIdx = i;
+        break;
+      }
+    }
+  }
+
+  if (endIdx === -1) return null;
+  const argsStr = line.slice(startIdx, endIdx).trim();
+  const trailingComment = line.slice(endIdx + 1).trim();
+  return { argsStr, trailingComment };
 }
 
 /**
@@ -398,25 +440,32 @@ function extractWithBlockCall(
  */
 function stripQuotes(str: string): string {
   if (!str) return "";
-  let s = str.trim();
+  const s = str.trim();
   if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
     return s.slice(1, -1);
   }
   return s;
 }
 
+export interface ContainerStackEntry {
+  indent: number;
+  block: ParsedBlockDef;
+  isExplicitClose?: boolean;
+  isElseBranch?: boolean;
+}
+
 /**
- * 解析 LogoUp 专属语句并转换为对应的积木树节点
+ * 解析三模式通用的控制流语句 (for _ in range, if, else, def, return)
  */
-function parseLogoUpStatement(
+function parseSharedControlStatement(
   trimmed: string,
   indent: number,
-  stack: { indent: number; block: ParsedBlockDef; isExplicitClose?: boolean }[],
-  addBlock: (b: ParsedBlockDef) => void
+  stack: ContainerStackEntry[],
+  addBlock: (b: ParsedBlockDef) => void,
+  getCurrentList: () => ParsedBlockDef[]
 ): boolean {
-  // 1. 开始帽子积木
+  // 1. 开始帽子积木注释跳过（由顶层统一冠名唯一 logoup_start）
   if (trimmed.startsWith("# 🏁 开始")) {
-    addBlock({ type: "logoup_start", fields: {} });
     return true;
   }
 
@@ -452,6 +501,18 @@ function parseLogoUpStatement(
     return true;
   }
 
+  // 3.5 控制流 - 否则分支 else: (自动将同级前驱 logoup_if 升级为 logoup_if_else)
+  if (/^else\s*:/.test(trimmed)) {
+    const currentList = getCurrentList();
+    const prevBlock = currentList.length > 0 ? currentList[currentList.length - 1] : null;
+    if (prevBlock && (prevBlock.type === "logoup_if" || prevBlock.type === "logoup_if_else")) {
+      prevBlock.type = "logoup_if_else";
+      if (!prevBlock.elseChildren) prevBlock.elseChildren = [];
+      stack.push({ indent, block: prevBlock, isElseBranch: true });
+      return true;
+    }
+  }
+
   // 4. 控制流 - 函数定义 def my_func(params):
   const defFuncMatch = trimmed.match(/^def\s+([a-zA-Z_]\w*)\s*\((.*?)\)\s*:/);
   if (defFuncMatch) {
@@ -467,17 +528,7 @@ function parseLogoUpStatement(
     return true;
   }
 
-  // 5. 控制流 - push() / pop()
-  if (trimmed === "push()") {
-    addBlock({ type: "logoup_push", fields: {} });
-    return true;
-  }
-  if (trimmed === "pop()") {
-    addBlock({ type: "logoup_pop", fields: {} });
-    return true;
-  }
-
-  // 6. 控制流 - return
+  // 5. 控制流 - return
   if (trimmed === "return") {
     addBlock({ type: "logoup_return", fields: {} });
     return true;
@@ -493,9 +544,37 @@ function parseLogoUpStatement(
     return true;
   }
 
-  // 7. 三维构件与三维绘图 (小写调用)
+  return false;
+}
+
+/**
+ * 解析 LogoUp 3D 模式专属语句并转换为对应的 logoup_* 积木节点
+ * 仅在 mode === "logoup" 下调用，严禁混入 build123d 或 CadQuery 模式
+ */
+function parseLogoUpStatement(
+  trimmed: string,
+  indent: number,
+  stack: ContainerStackEntry[],
+  addBlock: (b: ParsedBlockDef) => void,
+  getCurrentList: () => ParsedBlockDef[]
+): boolean {
+  if (parseSharedControlStatement(trimmed, indent, stack, addBlock, getCurrentList)) {
+    return true;
+  }
+
+  // 控制流 - push() / pop()
+  if (trimmed === "push()") {
+    addBlock({ type: "logoup_push", fields: {} });
+    return true;
+  }
+  if (trimmed === "pop()") {
+    addBlock({ type: "logoup_pop", fields: {} });
+    return true;
+  }
+
+  // 三维构件与三维绘图 (严格小写行首调用)
   // box(l, w, h)
-  const boxCall = extractFunctionCall(trimmed, "box");
+  const boxCall = extractLogoUpCall(trimmed, "box");
   if (boxCall) {
     const args = splitTopLevelArgs(boxCall.argsStr);
     addBlock({
@@ -510,7 +589,7 @@ function parseLogoUpStatement(
   }
 
   // cylinder(r, h)
-  const cylCall = extractFunctionCall(trimmed, "cylinder");
+  const cylCall = extractLogoUpCall(trimmed, "cylinder");
   if (cylCall) {
     const args = splitTopLevelArgs(cylCall.argsStr);
     addBlock({
@@ -524,7 +603,7 @@ function parseLogoUpStatement(
   }
 
   // cone(r, h)
-  const coneCall = extractFunctionCall(trimmed, "cone");
+  const coneCall = extractLogoUpCall(trimmed, "cone");
   if (coneCall) {
     const args = splitTopLevelArgs(coneCall.argsStr);
     addBlock({
@@ -538,7 +617,7 @@ function parseLogoUpStatement(
   }
 
   // sphere(r)
-  const sphCall = extractFunctionCall(trimmed, "sphere");
+  const sphCall = extractLogoUpCall(trimmed, "sphere");
   if (sphCall) {
     const args = splitTopLevelArgs(sphCall.argsStr);
     addBlock({
@@ -548,8 +627,23 @@ function parseLogoUpStatement(
     return true;
   }
 
+  // ellipsoid(rx, ry, rz)
+  const ellipsoidCall = extractLogoUpCall(trimmed, "ellipsoid");
+  if (ellipsoidCall) {
+    const args = splitTopLevelArgs(ellipsoidCall.argsStr);
+    addBlock({
+      type: "logoup_ellipsoid",
+      fields: {
+        RX: Number(args[0]) || 15,
+        RY: Number(args[1]) || 10,
+        RZ: Number(args[2]) || 10,
+      },
+    });
+    return true;
+  }
+
   // pyramid_solid(sides, r, h)
-  const pyrSolidCall = extractFunctionCall(trimmed, "pyramid_solid");
+  const pyrSolidCall = extractLogoUpCall(trimmed, "pyramid_solid");
   if (pyrSolidCall) {
     const args = splitTopLevelArgs(pyrSolidCall.argsStr);
     addBlock({
@@ -563,22 +657,25 @@ function parseLogoUpStatement(
     return true;
   }
 
-  // torus(r1, r2)
-  const torusCall = extractFunctionCall(trimmed, "torus");
+  // torus(r1, r2) -> 注意 logoup_torus 使用 ValueInput (MAJOR_RADIUS, MINOR_RADIUS)
+  const torusCall = extractLogoUpCall(trimmed, "torus");
   if (torusCall) {
     const args = splitTopLevelArgs(torusCall.argsStr);
+    const r1Def = parseExprToBlockDef(args[0] || "10") || { type: "math_number", fields: { NUM: 10 } };
+    const r2Def = parseExprToBlockDef(args[1] || "4") || { type: "math_number", fields: { NUM: 4 } };
     addBlock({
       type: "logoup_torus",
-      fields: {
-        MAJOR_RADIUS: Number(args[0]) || 20,
-        MINOR_RADIUS: Number(args[1]) || 5,
+      fields: {},
+      inputs: {
+        MAJOR_RADIUS: r1Def,
+        MINOR_RADIUS: r2Def,
       },
     });
     return true;
   }
 
   // rect(l, w)
-  const rectCall = extractFunctionCall(trimmed, "rect");
+  const rectCall = extractLogoUpCall(trimmed, "rect");
   if (rectCall) {
     const args = splitTopLevelArgs(rectCall.argsStr);
     addBlock({
@@ -592,7 +689,7 @@ function parseLogoUpStatement(
   }
 
   // square(s)
-  const sqCall = extractFunctionCall(trimmed, "square");
+  const sqCall = extractLogoUpCall(trimmed, "square");
   if (sqCall) {
     const args = splitTopLevelArgs(sqCall.argsStr);
     addBlock({
@@ -603,7 +700,7 @@ function parseLogoUpStatement(
   }
 
   // rounded_rect(l, w, r)
-  const rRectCall = extractFunctionCall(trimmed, "rounded_rect");
+  const rRectCall = extractLogoUpCall(trimmed, "rounded_rect");
   if (rRectCall) {
     const args = splitTopLevelArgs(rRectCall.argsStr);
     addBlock({
@@ -618,7 +715,7 @@ function parseLogoUpStatement(
   }
 
   // rounded_square(s, r)
-  const rSqCall = extractFunctionCall(trimmed, "rounded_square");
+  const rSqCall = extractLogoUpCall(trimmed, "rounded_square");
   if (rSqCall) {
     const args = splitTopLevelArgs(rSqCall.argsStr);
     addBlock({
@@ -631,21 +728,30 @@ function parseLogoUpStatement(
     return true;
   }
 
-  // circle(r) (注意必须小写)
-  if (trimmed.startsWith("circle(")) {
-    const cirCall = extractFunctionCall(trimmed, "circle");
-    if (cirCall) {
-      const args = splitTopLevelArgs(cirCall.argsStr);
+  // circle(r) 或 circle(r) # 弧线 angle°
+  const cirCall = extractLogoUpCall(trimmed, "circle");
+  if (cirCall) {
+    const args = splitTopLevelArgs(cirCall.argsStr);
+    const arcCommentMatch = cirCall.trailingComment.match(/弧线\s*([-\d.]+)/);
+    if (arcCommentMatch) {
+      addBlock({
+        type: "logoup_arc",
+        fields: {
+          RADIUS: Number(args[0]) || 10,
+          ANGLE: Number(arcCommentMatch[1]) || 90,
+        },
+      });
+    } else {
       addBlock({
         type: "logoup_circle",
         fields: { RADIUS: Number(args[0]) || 10 },
       });
-      return true;
     }
+    return true;
   }
 
   // ellipse(a, b)
-  const ellCall = extractFunctionCall(trimmed, "ellipse");
+  const ellCall = extractLogoUpCall(trimmed, "ellipse");
   if (ellCall) {
     const args = splitTopLevelArgs(ellCall.argsStr);
     addBlock({
@@ -659,7 +765,7 @@ function parseLogoUpStatement(
   }
 
   // egg(rx, ry)
-  const eggCall = extractFunctionCall(trimmed, "egg");
+  const eggCall = extractLogoUpCall(trimmed, "egg");
   if (eggCall) {
     const args = splitTopLevelArgs(eggCall.argsStr);
     addBlock({
@@ -673,7 +779,7 @@ function parseLogoUpStatement(
   }
 
   // polygon(sides, r)
-  const polyCall = extractFunctionCall(trimmed, "polygon");
+  const polyCall = extractLogoUpCall(trimmed, "polygon");
   if (polyCall) {
     const args = splitTopLevelArgs(polyCall.argsStr);
     addBlock({
@@ -687,7 +793,7 @@ function parseLogoUpStatement(
   }
 
   // star(p, r)
-  const starCall = extractFunctionCall(trimmed, "star");
+  const starCall = extractLogoUpCall(trimmed, "star");
   if (starCall) {
     const args = splitTopLevelArgs(starCall.argsStr);
     addBlock({
@@ -701,7 +807,7 @@ function parseLogoUpStatement(
   }
 
   // five_star(r)
-  const fStarCall = extractFunctionCall(trimmed, "five_star");
+  const fStarCall = extractLogoUpCall(trimmed, "five_star");
   if (fStarCall) {
     const args = splitTopLevelArgs(fStarCall.argsStr);
     addBlock({
@@ -712,7 +818,7 @@ function parseLogoUpStatement(
   }
 
   // six_star(r)
-  const sStarCall = extractFunctionCall(trimmed, "six_star");
+  const sStarCall = extractLogoUpCall(trimmed, "six_star");
   if (sStarCall) {
     const args = splitTopLevelArgs(sStarCall.argsStr);
     addBlock({
@@ -723,7 +829,7 @@ function parseLogoUpStatement(
   }
 
   // four_star(r)
-  const fourStarCall = extractFunctionCall(trimmed, "four_star");
+  const fourStarCall = extractLogoUpCall(trimmed, "four_star");
   if (fourStarCall) {
     const args = splitTopLevelArgs(fourStarCall.argsStr);
     addBlock({
@@ -733,32 +839,55 @@ function parseLogoUpStatement(
     return true;
   }
 
-  // up(d)
-  const upCall = extractFunctionCall(trimmed, "up");
+  // spirograph(R, r, d, ang)
+  const spiroCall = extractLogoUpCall(trimmed, "spirograph");
+  if (spiroCall) {
+    const args = splitTopLevelArgs(spiroCall.argsStr);
+    addBlock({
+      type: "logoup_spirograph",
+      fields: {
+        R: Number(args[0]) || 20,
+        r: Number(args[1]) || 8,
+        d: Number(args[2]) || 6,
+        ANGLE: Number(args[3]) || 360,
+      },
+    });
+    return true;
+  }
+
+  // up(d) / down(d)
+  const upCall = extractLogoUpCall(trimmed, "up");
   if (upCall) {
     const args = splitTopLevelArgs(upCall.argsStr);
     addBlock({
       type: "logoup_up",
-      fields: { DISTANCE: Number(args[0]) || 10 },
+      fields: { DISTANCE: Number(args[0]) ?? 10 },
+    });
+    return true;
+  }
+  const downCall = extractLogoUpCall(trimmed, "down");
+  if (downCall) {
+    const args = splitTopLevelArgs(downCall.argsStr);
+    addBlock({
+      type: "logoup_up",
+      fields: { DISTANCE: -(Number(args[0]) || 10) },
     });
     return true;
   }
 
   // extrude(h)
-  const extrudeCall = extractFunctionCall(trimmed, "extrude");
+  const extrudeCall = extractLogoUpCall(trimmed, "extrude");
   if (extrudeCall) {
     const args = splitTopLevelArgs(extrudeCall.argsStr);
-    if (args.length <= 1) {
-      addBlock({
-        type: "logoup_extrude",
-        fields: { HEIGHT: Number(args[0]) || 10 },
-      });
-      return true;
-    }
+    addBlock({
+      type: "logoup_extrude",
+      fields: { HEIGHT: Number(args[0]) || 10 },
+    });
+    return true;
   }
 
   // cextrude(h)
-  const cextrudeCall = extractFunctionCall(trimmed, "cextrude");
+  const cextrudeCall = extractLogoUpCall(trimmed, "cextrude");
   if (cextrudeCall) {
     const args = splitTopLevelArgs(cextrudeCall.argsStr);
     addBlock({
@@ -769,7 +898,7 @@ function parseLogoUpStatement(
   }
 
   // pyramid(h)
-  const pyrCall = extractFunctionCall(trimmed, "pyramid");
+  const pyrCall = extractLogoUpCall(trimmed, "pyramid");
   if (pyrCall) {
     const args = splitTopLevelArgs(pyrCall.argsStr);
     addBlock({
@@ -780,7 +909,7 @@ function parseLogoUpStatement(
   }
 
   // cave(d)
-  const caveCall = extractFunctionCall(trimmed, "cave");
+  const caveCall = extractLogoUpCall(trimmed, "cave");
   if (caveCall) {
     const args = splitTopLevelArgs(caveCall.argsStr);
     addBlock({
@@ -790,26 +919,26 @@ function parseLogoUpStatement(
     return true;
   }
 
-  // body()
+  // body() / reset() / done() / link()
   if (trimmed === "body()") {
     addBlock({ type: "logoup_body", fields: {} });
     return true;
   }
-
-  // reset()
   if (trimmed === "reset()") {
     addBlock({ type: "logoup_reset", fields: {} });
     return true;
   }
-
-  // done()
   if (trimmed === "done()") {
     addBlock({ type: "logoup_done_3d", fields: {} });
     return true;
   }
+  if (trimmed === "link()") {
+    addBlock({ type: "logoup_link", fields: {} });
+    return true;
+  }
 
   // color(c)
-  const colorCall = extractFunctionCall(trimmed, "color");
+  const colorCall = extractLogoUpCall(trimmed, "color");
   if (colorCall) {
     const args = splitTopLevelArgs(colorCall.argsStr);
     addBlock({
@@ -820,7 +949,7 @@ function parseLogoUpStatement(
   }
 
   // scale(f)
-  const scaleCall = extractFunctionCall(trimmed, "scale");
+  const scaleCall = extractLogoUpCall(trimmed, "scale");
   if (scaleCall) {
     const args = splitTopLevelArgs(scaleCall.argsStr);
     addBlock({
@@ -830,58 +959,54 @@ function parseLogoUpStatement(
     return true;
   }
 
-  // yaw(a)
-  const yawCall = extractFunctionCall(trimmed, "yaw");
+  // yaw(a) / pitch(a) / roll(a)
+  const yawCall = extractLogoUpCall(trimmed, "yaw");
   if (yawCall) {
     const args = splitTopLevelArgs(yawCall.argsStr);
     addBlock({
       type: "logoup_yaw",
-      fields: { ANGLE: Number(args[0]) || 45 },
+      fields: { ANGLE: Number(args[0]) ?? 45 },
     });
     return true;
   }
-
-  // pitch(a)
-  const pitchCall = extractFunctionCall(trimmed, "pitch");
+  const pitchCall = extractLogoUpCall(trimmed, "pitch");
   if (pitchCall) {
     const args = splitTopLevelArgs(pitchCall.argsStr);
     addBlock({
       type: "logoup_pitch",
-      fields: { ANGLE: Number(args[0]) || 45 },
+      fields: { ANGLE: Number(args[0]) ?? 45 },
     });
     return true;
   }
-
-  // roll(a)
-  const rollCall = extractFunctionCall(trimmed, "roll");
+  const rollCall = extractLogoUpCall(trimmed, "roll");
   if (rollCall) {
     const args = splitTopLevelArgs(rollCall.argsStr);
     addBlock({
       type: "logoup_roll",
-      fields: { ANGLE: Number(args[0]) || 45 },
+      fields: { ANGLE: Number(args[0]) ?? 45 },
     });
     return true;
   }
 
   // jump(d)
-  const jumpCall = extractFunctionCall(trimmed, "jump");
+  const jumpCall = extractLogoUpCall(trimmed, "jump");
   if (jumpCall) {
     const args = splitTopLevelArgs(jumpCall.argsStr);
     addBlock({
       type: "logoup_jump",
-      fields: { DISTANCE: Number(args[0]) || 10 },
+      fields: { DISTANCE: Number(args[0]) ?? 10 },
     });
     return true;
   }
 
   // move(dx, dy, dz)
-  const moveCall = extractFunctionCall(trimmed, "move");
+  const moveCall = extractLogoUpCall(trimmed, "move");
   if (moveCall) {
     const args = splitTopLevelArgs(moveCall.argsStr);
     addBlock({
       type: "logoup_move",
       fields: {
-        DX: Number(args[0]) || 10,
+        DX: Number(args[0]) || 0,
         DY: Number(args[1]) || 0,
         DZ: Number(args[2]) || 0,
       },
@@ -890,13 +1015,13 @@ function parseLogoUpStatement(
   }
 
   // shift(dx, dy)
-  const shiftCall = extractFunctionCall(trimmed, "shift");
+  const shiftCall = extractLogoUpCall(trimmed, "shift");
   if (shiftCall) {
     const args = splitTopLevelArgs(shiftCall.argsStr);
     addBlock({
       type: "logoup_shift",
       fields: {
-        DX: Number(args[0]) || 10,
+        DX: Number(args[0]) || 0,
         DY: Number(args[1]) || 0,
       },
     });
@@ -904,7 +1029,7 @@ function parseLogoUpStatement(
   }
 
   // subtract(mode)
-  const subCall = extractFunctionCall(trimmed, "subtract");
+  const subCall = extractLogoUpCall(trimmed, "subtract");
   if (subCall) {
     const args = splitTopLevelArgs(subCall.argsStr);
     addBlock({
@@ -914,68 +1039,112 @@ function parseLogoUpStatement(
     return true;
   }
 
-  // moveto(x, y, z)
-  const movetoCall = extractFunctionCall(trimmed, "moveto");
+  // moveto(x, y, z) 或 moveto(getx(), gety(), z)
+  const movetoCall = extractLogoUpCall(trimmed, "moveto");
   if (movetoCall) {
     const args = splitTopLevelArgs(movetoCall.argsStr);
-    addBlock({
-      type: "logoup_moveto",
-      fields: {
-        X: Number(args[0]) || 0,
-        Y: Number(args[1]) || 0,
-        Z: Number(args[2]) || 0,
-      },
-    });
+    if (args[0]?.trim() === "getx()" && args[1]?.trim() === "gety()") {
+      addBlock({
+        type: "logoup_movezto",
+        fields: { Z: Number(args[2]) || 0 },
+      });
+    } else {
+      addBlock({
+        type: "logoup_moveto",
+        fields: {
+          X: Number(args[0]) || 0,
+          Y: Number(args[1]) || 0,
+          Z: Number(args[2]) || 0,
+        },
+      });
+    }
     return true;
   }
 
-  // go(d)
-  const goCall = extractFunctionCall(trimmed, "go");
+  // go(d) / fd(d) / forward(d) / bk(d) / backward(d)
+  const goCall =
+    extractLogoUpCall(trimmed, "go") ||
+    extractLogoUpCall(trimmed, "fd") ||
+    extractLogoUpCall(trimmed, "forward");
   if (goCall) {
     const args = splitTopLevelArgs(goCall.argsStr);
     addBlock({
       type: "logoup_go",
-      fields: { DISTANCE: Number(args[0]) || 20 },
+      fields: { DISTANCE: Number(args[0]) ?? 20 },
+    });
+    return true;
+  }
+  const bkCall = extractLogoUpCall(trimmed, "bk") || extractLogoUpCall(trimmed, "backward");
+  if (bkCall) {
+    const args = splitTopLevelArgs(bkCall.argsStr);
+    addBlock({
+      type: "logoup_go",
+      fields: { DISTANCE: -(Number(args[0]) || 20) },
     });
     return true;
   }
 
-  // turn(a)
-  const turnCall = extractFunctionCall(trimmed, "turn");
+  // turn(a) / rt(a)
+  const turnCall = extractLogoUpCall(trimmed, "turn") || extractLogoUpCall(trimmed, "rt");
   if (turnCall) {
     const args = splitTopLevelArgs(turnCall.argsStr);
     addBlock({
       type: "logoup_turn",
-      fields: { ANGLE: Number(args[0]) || 90 },
+      fields: { ANGLE: Number(args[0]) ?? 90 },
     });
     return true;
   }
 
-  // turn_left(a)
-  const turnLCall = extractFunctionCall(trimmed, "turn_left");
+  // turn_left(a) / lt(a)
+  const turnLCall = extractLogoUpCall(trimmed, "turn_left") || extractLogoUpCall(trimmed, "lt");
   if (turnLCall) {
     const args = splitTopLevelArgs(turnLCall.argsStr);
     addBlock({
       type: "logoup_turn_left",
-      fields: { ANGLE: Number(args[0]) || 90 },
+      fields: { ANGLE: Number(args[0]) ?? 90 },
     });
     return true;
   }
 
-  // draw()
+  // draw() / fill() / clear() / home() / close() / clear_sketch()
   if (trimmed === "draw()") {
     addBlock({ type: "logoup_draw", fields: {} });
     return true;
   }
-
-  // fill()
   if (trimmed === "fill()") {
     addBlock({ type: "logoup_fill", fields: {} });
     return true;
   }
+  if (trimmed === "clear()") {
+    addBlock({ type: "logoup_clear", fields: {} });
+    return true;
+  }
+  if (trimmed === "home()") {
+    addBlock({ type: "logoup_home", fields: {} });
+    return true;
+  }
+  if (trimmed === "close()") {
+    addBlock({ type: "logoup_close", fields: {} });
+    return true;
+  }
+  if (trimmed === "clear_sketch()") {
+    addBlock({ type: "logoup_clearsketch", fields: {} });
+    return true;
+  }
+
+  // erase(mode)
+  const eraseCall = extractLogoUpCall(trimmed, "erase");
+  if (eraseCall) {
+    const args = splitTopLevelArgs(eraseCall.argsStr);
+    addBlock({
+      type: "logoup_erase",
+      fields: { MODE: /true/i.test(args[0]) ? "ENABLE" : "DISABLE" },
+    });
+    return true;
+  }
 
   // width(w)
-  const widthCall = extractFunctionCall(trimmed, "width");
+  const widthCall = extractLogoUpCall(trimmed, "width");
   if (widthCall) {
     const args = splitTopLevelArgs(widthCall.argsStr);
     addBlock({
@@ -985,26 +1154,8 @@ function parseLogoUpStatement(
     return true;
   }
 
-  // clear()
-  if (trimmed === "clear()") {
-    addBlock({ type: "logoup_clear", fields: {} });
-    return true;
-  }
-
-  // home()
-  if (trimmed === "home()") {
-    addBlock({ type: "logoup_home", fields: {} });
-    return true;
-  }
-
-  // close()
-  if (trimmed === "close()") {
-    addBlock({ type: "logoup_close", fields: {} });
-    return true;
-  }
-
   // offset_path(a)
-  const offCall = extractFunctionCall(trimmed, "offset_path");
+  const offCall = extractLogoUpCall(trimmed, "offset_path");
   if (offCall) {
     const args = splitTopLevelArgs(offCall.argsStr);
     addBlock({
@@ -1015,7 +1166,7 @@ function parseLogoUpStatement(
   }
 
   // goto(x, y)
-  const gotoCall = extractFunctionCall(trimmed, "goto");
+  const gotoCall = extractLogoUpCall(trimmed, "goto");
   if (gotoCall) {
     const args = splitTopLevelArgs(gotoCall.argsStr);
     addBlock({
@@ -1029,7 +1180,7 @@ function parseLogoUpStatement(
   }
 
   // turnto(a)
-  const turntoCall = extractFunctionCall(trimmed, "turnto");
+  const turntoCall = extractLogoUpCall(trimmed, "turnto");
   if (turntoCall) {
     const args = splitTopLevelArgs(turntoCall.argsStr);
     addBlock({
@@ -1039,8 +1190,8 @@ function parseLogoUpStatement(
     return true;
   }
 
-  // setx(x)
-  const setxCall = extractFunctionCall(trimmed, "setx");
+  // setx(x) / sety(y)
+  const setxCall = extractLogoUpCall(trimmed, "setx");
   if (setxCall) {
     const args = splitTopLevelArgs(setxCall.argsStr);
     addBlock({
@@ -1049,9 +1200,7 @@ function parseLogoUpStatement(
     });
     return true;
   }
-
-  // sety(y)
-  const setyCall = extractFunctionCall(trimmed, "sety");
+  const setyCall = extractLogoUpCall(trimmed, "sety");
   if (setyCall) {
     const args = splitTopLevelArgs(setyCall.argsStr);
     addBlock({
@@ -1061,28 +1210,33 @@ function parseLogoUpStatement(
     return true;
   }
 
-  // clear_sketch()
-  if (trimmed === "clear_sketch()") {
-    addBlock({ type: "logoup_clearsketch", fields: {} });
-    return true;
-  }
-
   // txtstamp(...)
-  const txtCall = extractFunctionCall(trimmed, "txtstamp");
+  const txtCall = extractLogoUpCall(trimmed, "txtstamp");
   if (txtCall) {
     const args = splitTopLevelArgs(txtCall.argsStr);
-    addBlock({
-      type: "logoup_txtstamp",
-      fields: { TEXT: stripQuotes(args[0]) || "LogoUp" },
-    });
+    if (args.length >= 2) {
+      const sizeVal = args[1].replace(/^size\s*=\s*/i, "").trim();
+      addBlock({
+        type: "logoup_txtstampex",
+        fields: {
+          TEXT: stripQuotes(args[0]) || "LogoUp",
+          SIZE: Number(sizeVal) || 10,
+        },
+      });
+    } else {
+      addBlock({
+        type: "logoup_txtstamp",
+        fields: { TEXT: stripQuotes(args[0]) || "LogoUp" },
+      });
+    }
     return true;
   }
 
-  // 8. 变量赋值 (var = expr)
+  // 变量赋值 (var = expr)
   const assign = splitTopLevelAssignment(trimmed);
   if (assign) {
     const varName = assign.lhs.trim();
-    if (/^[a-zA-Z_]\w*$/.test(varName) && !["part", "sk", "ln", "t"].includes(varName)) {
+    if (/^[a-zA-Z_]\w*$/.test(varName)) {
       const valDef = parseExprToBlockDef(assign.rhs.trim());
       addBlock({
         type: "logoup_set_var",
@@ -1093,13 +1247,13 @@ function parseLogoUpStatement(
     }
   }
 
-  // 9. 通用自定义函数调用 (my_func(...))
+  // 通用自定义函数调用 (my_func(...))
   const generalFn = trimmed.match(/^([a-zA-Z_]\w*)\s*\((.*)\)$/);
   if (generalFn) {
     const name = generalFn[1];
     const argsStr = generalFn[2].trim();
-    const knownB3D = ["show", "show_object", "print", "exit"];
-    if (!knownB3D.includes(name)) {
+    const knownIgnore = ["show", "show_object", "print", "exit"];
+    if (!knownIgnore.includes(name)) {
       addBlock({
         type: "logoup_call_func_stmt",
         fields: { NAME: name, ARGS: argsStr },
@@ -1112,9 +1266,711 @@ function parseLogoUpStatement(
 }
 
 /**
- * 逐行与缩进语法分析器，将 Python 代码解析为结构化积木树
+ * 确保积木定义列表顶部始终包含唯一一个「开始」(logoup_start) 积木
  */
-export function parseBuild123dCode(code: string): ParsedBlockDef[] {
+function wrapWithSingleStartBlock(blocks: ParsedBlockDef[]): ParsedBlockDef[] {
+  const filtered = blocks.filter((b) => b.type !== "logoup_start");
+  if (filtered.length === 0) return [];
+  return [{ type: "logoup_start", fields: {} }, ...filtered];
+}
+
+/**
+ * ==================== 模式 1: LogoUp 3D 专属解析器 ====================
+ */
+export function parseLogoUpModeCode(code: string): ParsedBlockDef[] {
+  const rawLines = code.split(/\r?\n/);
+  const lines: string[] = [];
+  for (const l of rawLines) {
+    if (l.includes(";") && !l.includes("#")) {
+      const indentMatch = l.match(/^(\s*)/);
+      const prefix = indentMatch ? indentMatch[1] : "";
+      for (const sub of l.split(";")) {
+        if (sub.trim()) lines.push(prefix + sub.trim());
+      }
+      continue;
+    }
+    lines.push(l);
+  }
+
+  const blocks: ParsedBlockDef[] = [];
+  const stack: ContainerStackEntry[] = [];
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const rawLine = lines[lineIndex];
+    const trimmed = rawLine.trim();
+
+    if (
+      !trimmed ||
+      trimmed === "pass" ||
+      trimmed.startsWith("from ") ||
+      trimmed.startsWith("import ")
+    ) {
+      continue;
+    }
+
+    const indent = rawLine.search(/\S|$/);
+    while (stack.length > 0 && stack[stack.length - 1].indent >= indent) {
+      stack.pop();
+    }
+
+    const topEntry = stack.length > 0 ? stack[stack.length - 1] : null;
+    const getCurrentList = (): ParsedBlockDef[] => {
+      if (!topEntry) return blocks;
+      if (topEntry.isElseBranch) {
+        if (!topEntry.block.elseChildren) topEntry.block.elseChildren = [];
+        return topEntry.block.elseChildren;
+      }
+      if (!topEntry.block.children) topEntry.block.children = [];
+      return topEntry.block.children;
+    };
+    const addBlock = (b: ParsedBlockDef) => {
+      getCurrentList().push(b);
+    };
+
+    if (trimmed.startsWith("#")) {
+      if (trimmed.startsWith("# 🏁 开始")) continue;
+      if (trimmed.startsWith("# 加载图片参考")) {
+        addBlock({ type: "logoup_imgload", fields: {} });
+      } else if (trimmed.startsWith("# 缩放图片参考")) {
+        addBlock({ type: "logoup_imgscale", fields: {} });
+      } else if (trimmed.startsWith("# 图片采样")) {
+        addBlock({ type: "logoup_imgstamp", fields: {} });
+      } else if (trimmed.startsWith("# 卸载图片")) {
+        addBlock({ type: "logoup_imgunload", fields: {} });
+      }
+      continue;
+    }
+
+    parseLogoUpStatement(trimmed, indent, stack, addBlock, getCurrentList);
+  }
+
+  return wrapWithSingleStartBlock(blocks);
+}
+
+/**
+ * 辅助：拆分 CadQuery 链式调用（如 cq.Workplane("XY").rect(20, 20).extrude(10)）为有序方法列表
+ */
+function splitCadQueryMethodChain(rhs: string): { name: string; argsStr: string }[] {
+  let s = rhs.trim();
+  // 剥离最外层包裹括号: (cq.Workplane("XY").circle(30)...)
+  while (s.startsWith("(") && s.endsWith(")")) {
+    let depth = 0;
+    let canStrip = true;
+    for (let i = 0; i < s.length - 1; i++) {
+      if (s[i] === "(") depth++;
+      else if (s[i] === ")") depth--;
+      if (depth === 0) {
+        canStrip = false;
+        break;
+      }
+    }
+    if (canStrip) s = s.slice(1, -1).trim();
+    else break;
+  }
+
+  // 移除起始的 cq. 或 part. / result. / wp.
+  s = s.replace(/^(?:cq|part|result|wp|workplane)\s*\.\s*/, "");
+
+  const calls: { name: string; argsStr: string }[] = [];
+  let i = 0;
+  while (i < s.length) {
+    while (i < s.length && (s[i] === "." || /\s/.test(s[i]))) i++;
+    if (i >= s.length) break;
+
+    const nameMatch = s.slice(i).match(/^([a-zA-Z_]\w*)\s*\(/);
+    if (!nameMatch) break;
+
+    const fnName = nameMatch[1];
+    const openParenIdx = i + nameMatch[0].length - 1;
+    let depth = 1;
+    let closeParenIdx = -1;
+    for (let j = openParenIdx + 1; j < s.length; j++) {
+      const ch = s[j];
+      if (ch === "(" || ch === "[" || ch === "{") depth++;
+      else if (ch === ")" || ch === "]" || ch === "}") {
+        depth--;
+        if (depth === 0) {
+          closeParenIdx = j;
+          break;
+        }
+      }
+    }
+    if (closeParenIdx === -1) break;
+
+    const argsStr = s.slice(openParenIdx + 1, closeParenIdx).trim();
+    calls.push({ name: fnName, argsStr });
+    i = closeParenIdx + 1;
+  }
+
+  return calls;
+}
+
+/**
+ * ==================== 模式 2: CadQuery 专属解析器 ====================
+ * 严格生成 cq_* 积木与通用控制流积木，绝不转串为 logoup_* 或 b3d_* 几何积木
+ */
+export function parseCadQueryModeCode(code: string): ParsedBlockDef[] {
+  const rawLines = code.split(/\r?\n/);
+  // 合并多行括号表达式（如 part = (\n cq.Workplane("XY")\n .circle(30)...\n)）
+  const logicalLines: string[] = [];
+  let buffer = "";
+  let parenDepth = 0;
+
+  for (const raw of rawLines) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    if (parenDepth === 0 && trimmed.startsWith("#")) {
+      logicalLines.push(raw);
+      continue;
+    }
+    const codePart = raw.replace(/#.*$/, "");
+    if (parenDepth > 0) {
+      buffer += " " + trimmed;
+    } else {
+      buffer = raw;
+    }
+    for (const ch of codePart) {
+      if (ch === "(" || ch === "[") parenDepth++;
+      else if (ch === ")" || ch === "]") parenDepth = Math.max(0, parenDepth - 1);
+    }
+    if (parenDepth === 0 && buffer.trim()) {
+      logicalLines.push(buffer);
+      buffer = "";
+    }
+  }
+  if (buffer.trim()) logicalLines.push(buffer);
+
+  const blocks: ParsedBlockDef[] = [];
+  const stack: ContainerStackEntry[] = [];
+
+  for (let lineIdx = 0; lineIdx < logicalLines.length; lineIdx++) {
+    const rawLine = logicalLines[lineIdx];
+    const trimmed = rawLine.trim();
+
+    if (
+      !trimmed ||
+      trimmed === "pass" ||
+      trimmed.startsWith("import ") ||
+      trimmed.startsWith("from ")
+    ) {
+      continue;
+    }
+
+    const indent = rawLine.search(/\S|$/);
+    while (stack.length > 0 && stack[stack.length - 1].indent >= indent) {
+      stack.pop();
+    }
+
+    const topEntry = stack.length > 0 ? stack[stack.length - 1] : null;
+    const getCurrentList = (): ParsedBlockDef[] => {
+      if (!topEntry) return blocks;
+      if (topEntry.isElseBranch) {
+        if (!topEntry.block.elseChildren) topEntry.block.elseChildren = [];
+        return topEntry.block.elseChildren;
+      }
+      if (!topEntry.block.children) topEntry.block.children = [];
+      return topEntry.block.children;
+    };
+    const addBlock = (b: ParsedBlockDef) => {
+      getCurrentList().push(b);
+    };
+
+    // 1. 注释 -> cq_comment
+    if (trimmed.startsWith("#")) {
+      if (trimmed.startsWith("# 🏁 开始")) continue;
+      addBlock({
+        type: "cq_comment",
+        fields: { TEXT: trimmed.replace(/^#+\s*/, "") },
+      });
+      continue;
+    }
+
+    // 2. 识别径向多孔阵列宏 (cq_macro_radial_array): 3 行复合结构
+    const radialHeaderMatch = trimmed.match(
+      /\.faces\(\s*["']>Z["']\s*\)\.workplane\(\s*offset\s*=\s*-([-\d.]+)\s*\)\.transformed\(\s*rotate\s*=\s*\(\s*90\s*,\s*0\s*,\s*0\s*\)\s*\)/
+    );
+    if (radialHeaderMatch && lineIdx + 2 < logicalLines.length) {
+      const next1 = logicalLines[lineIdx + 1].trim();
+      const next2 = logicalLines[lineIdx + 2].trim();
+      const forMatch = next1.match(/^for\s+_\s+in\s+range\(\s*(\d+)\s*\)\s*:/);
+      const holeMatch = next2.match(
+        /\.transformed\(\s*rotate\s*=\s*\(\s*0\s*,\s*360\s*\/\s*\d+\s*,\s*0\s*\)\s*\)\.hole\(\s*diameter\s*=\s*([-\d.]+)\s*,\s*depth\s*=\s*([-\d.]+)\s*\)/
+      );
+      if (forMatch && holeMatch) {
+        addBlock({
+          type: "cq_macro_radial_array",
+          fields: {
+            COUNT: Number(forMatch[1]) || 6,
+            DIAMETER: Number(holeMatch[1]) || 4,
+            DEPTH: Number(holeMatch[2]) || 10,
+            OFFSET: Number(radialHeaderMatch[1]) || 2,
+          },
+        });
+        lineIdx += 2;
+        continue;
+      }
+    }
+
+    // 3. 识别法兰盘宏 (cq_macro_flange): 2 行复合结构
+    const flangeLine1 = trimmed.match(
+      /^part\s*=\s*cq\.Workplane\(\s*["']XY["']\s*\)\.circle\(\s*([-\d.]+)\s*\)\.extrude\(\s*([-\d.]+)\s*\)$/
+    );
+    if (flangeLine1 && lineIdx + 1 < logicalLines.length) {
+      const next1 = logicalLines[lineIdx + 1].trim();
+      const flangeLine2 = next1.match(
+        /^part\s*=\s*part\.faces\(\s*["']>Z["']\s*\)\.workplane\(\s*\)\.hole\(\s*diameter\s*=\s*([-\d.]+)\s*,\s*depth\s*=\s*([-\d.]+)\s*\)$/
+      );
+      if (flangeLine2 && flangeLine1[2] === flangeLine2[2]) {
+        addBlock({
+          type: "cq_macro_flange",
+          fields: {
+            OUTER_R: Number(flangeLine1[1]) || 25,
+            CENTER_D: Number(flangeLine2[1]) || 10,
+            THICKNESS: Number(flangeLine1[2]) || 8,
+          },
+        });
+        lineIdx += 1;
+        continue;
+      }
+    }
+
+    // 4. 识别倒圆台放样 (cq_op_cone)
+    const coneLoftMatch = trimmed.match(
+      /Workplane\(\s*["']XY["']\s*\)\s*\.circle\(\s*([-\d.]+)\s*\)\s*\.workplane\(\s*offset\s*=\s*([-\d.]+)\s*\)\s*\.circle\(\s*([-\d.]+)\s*\)\s*\.loft/
+    );
+    if (coneLoftMatch) {
+      addBlock({
+        type: "cq_op_cone",
+        fields: {
+          R_BOTTOM: Number(coneLoftMatch[1]) || 30,
+          HEIGHT: Number(coneLoftMatch[2]) || 15,
+          R_TOP: Number(coneLoftMatch[3]) || 20,
+        },
+      });
+      continue;
+    }
+
+    // 5. 识别极坐标孔位阵列 (cq_op_polar_array)
+    const polarArrayHoleMatch = trimmed.match(
+      /\.polarArray\(\s*radius\s*=\s*([-\d.]+).*?count\s*=\s*(\d+)\s*\)\s*\.circle\(\s*([-\d.]+)\s*\)\s*\.cutThruAll/
+    );
+    if (polarArrayHoleMatch) {
+      addBlock({
+        type: "cq_op_polar_array",
+        fields: {
+          RADIUS: Number(polarArrayHoleMatch[1]) || 28,
+          COUNT: Number(polarArrayHoleMatch[2]) || 8,
+          DIAMETER: Number((Number(polarArrayHoleMatch[3]) * 2).toFixed(2)) || 3,
+        },
+      });
+      continue;
+    }
+
+    // 6. 识别辐射散热格栅槽切削 (cq_op_cooling_slots)
+    const coolingSlotsMatch = trimmed.match(
+      /\.polarArray\(.*?count\s*=\s*(\d+)\s*\)\s*\.rect\(\s*([-\d.]+)\s*,\s*[-\d.]+\s*\)\s*\.cutBlind\(\s*-?([-\d.]+)\s*\)/
+    );
+    if (coolingSlotsMatch) {
+      addBlock({
+        type: "cq_op_cooling_slots",
+        fields: {
+          COUNT: Number(coolingSlotsMatch[1]) || 12,
+          WIDTH: Number(coolingSlotsMatch[2]) || 2,
+          DEPTH: Math.abs(Number(coolingSlotsMatch[3])) || 3,
+        },
+      });
+      continue;
+    }
+
+    // 7. 控制流语句 (for, if, else, def, return)
+    if (parseSharedControlStatement(trimmed, indent, stack, addBlock, getCurrentList)) {
+      continue;
+    }
+
+    // 8. 解析 CadQuery 链式调用语句 (如 part = cq.Workplane("XY")... 或 part = part.rect(...)...)
+    const assign = splitTopLevelAssignment(trimmed);
+    const rhsExpr = assign ? assign.rhs.trim() : trimmed;
+    const lhsVar = assign ? assign.lhs.trim() : "";
+
+    if (
+      /^(?:cq\.Workplane|part\.|result\.|wp\.|workplane\.|\(\s*(?:cq\.Workplane|part\.))/.test(rhsExpr)
+    ) {
+      const calls = splitCadQueryMethodChain(rhsExpr);
+      for (let cIdx = 0; cIdx < calls.length; cIdx++) {
+        const call = calls[cIdx];
+        const next1 = calls[cIdx + 1];
+        const next2 = calls[cIdx + 2];
+        const args = splitTopLevelArgs(call.argsStr);
+
+        const getArgVal = (idx: number, kwRegex: RegExp, defVal: string): string => {
+          for (const a of args) {
+            if (kwRegex.test(a)) return a.replace(kwRegex, "").trim();
+          }
+          let pos = 0;
+          for (const a of args) {
+            if (!a.includes("=")) {
+              if (pos === idx) return a.trim();
+              pos++;
+            }
+          }
+          return defVal;
+        };
+
+        if (call.name === "Workplane") {
+          addBlock({
+            type: "cq_init_workplane",
+            fields: { PLANE: extractPlane(call.argsStr) },
+          });
+          continue;
+        }
+
+        // .faces(...).edges("%Circle").fillet(r) / chamfer(l)
+        if (call.name === "faces" && next1?.name === "edges" && next2?.name === "fillet") {
+          const fArgs = splitTopLevelArgs(next2.argsStr);
+          addBlock({
+            type: "cq_op_fillet",
+            fields: {
+              SELECTOR: "faces_Z_circle",
+              RADIUS: Number(fArgs[0]) || 2,
+            },
+          });
+          cIdx += 2;
+          continue;
+        }
+        if (call.name === "faces" && next1?.name === "edges" && next2?.name === "chamfer") {
+          const cArgs = splitTopLevelArgs(next2.argsStr);
+          addBlock({
+            type: "cq_op_chamfer",
+            fields: {
+              SELECTOR: "faces_Z_circle",
+              LENGTH: Number(cArgs[0]) || 2,
+            },
+          });
+          cIdx += 2;
+          continue;
+        }
+
+        // .faces(">Z").shell(-2)
+        if (call.name === "faces" && next1?.name === "shell") {
+          const sArgs = splitTopLevelArgs(next1.argsStr);
+          addBlock({
+            type: "cq_op_shell",
+            fields: {
+              SELECTOR: stripQuotes(args[0]) || ">Z",
+              THICKNESS: Math.abs(Number(sArgs[0])) || 2,
+            },
+          });
+          cIdx += 1;
+          continue;
+        }
+
+        // .faces(">Z").workplane(centerOption=...)
+        if (call.name === "faces" && next1?.name === "workplane") {
+          const sel = stripQuotes(args[0]) || ">Z";
+          let centerOption = "ProjectedOrigin";
+          if (/CenterOfMass/i.test(next1.argsStr)) centerOption = "CenterOfMass";
+          else if (/CenterOfBoundBox/i.test(next1.argsStr)) centerOption = "CenterOfBoundBox";
+          addBlock({
+            type: "cq_sel_face",
+            fields: { SELECTOR: sel, CENTER_OPTION: centerOption },
+          });
+          cIdx += 1;
+          continue;
+        }
+
+        // .edges(...).fillet(r) / .edges(...).chamfer(l)
+        if (call.name === "edges" && next1?.name === "fillet") {
+          const fArgs = splitTopLevelArgs(next1.argsStr);
+          addBlock({
+            type: "cq_op_fillet",
+            fields: {
+              SELECTOR: stripQuotes(args[0] || ""),
+              RADIUS: Number(fArgs[0]) || 2,
+            },
+          });
+          cIdx += 1;
+          continue;
+        }
+        if (call.name === "edges" && next1?.name === "chamfer") {
+          const cArgs = splitTopLevelArgs(next1.argsStr);
+          addBlock({
+            type: "cq_op_chamfer",
+            fields: {
+              SELECTOR: stripQuotes(args[0] || ""),
+              LENGTH: Number(cArgs[0]) || 2,
+            },
+          });
+          cIdx += 1;
+          continue;
+        }
+
+        // .workplane(offset=5)
+        if (call.name === "workplane") {
+          const offVal = getArgVal(0, /^offset\s*=\s*/i, "5");
+          addBlock({
+            type: "cq_sel_offset",
+            fields: { OFFSET: Number(offVal) || 5 },
+          });
+          continue;
+        }
+
+        // .transformed(rotate=(rx, ry, rz), offset=(ox, oy, oz))
+        if (call.name === "transformed") {
+          const rotMatch = call.argsStr.match(/rotate\s*=\s*\(\s*([^)]+)\s*\)/i);
+          const offMatch = call.argsStr.match(/offset\s*=\s*\(\s*([^)]+)\s*\)/i);
+          const rotParts = rotMatch ? splitTopLevelArgs(rotMatch[1]) : ["0", "0", "0"];
+          const offParts = offMatch ? splitTopLevelArgs(offMatch[1]) : ["0", "0", "0"];
+          addBlock({
+            type: "cq_op_transform",
+            fields: {
+              RX: Number(rotParts[0]) || 0,
+              RY: Number(rotParts[1]) || 0,
+              RZ: Number(rotParts[2]) || 0,
+              OX: Number(offParts[0]) || 0,
+              OY: Number(offParts[1]) || 0,
+              OZ: Number(offParts[2]) || 0,
+            },
+          });
+          continue;
+        }
+
+        // .box(l, w, h)
+        if (call.name === "box") {
+          const l = getArgVal(0, /^length\s*=\s*/i, "20");
+          const w = getArgVal(1, /^width\s*=\s*/i, "20");
+          const h = getArgVal(2, /^height\s*=\s*/i, "10");
+          addBlock({
+            type: "cq_op_box",
+            fields: {
+              LENGTH: Number(l) || 20,
+              WIDTH: Number(w) || 20,
+              HEIGHT: Number(h) || 10,
+            },
+          });
+          continue;
+        }
+
+        // .cylinder(h, r)
+        if (call.name === "cylinder") {
+          const h = getArgVal(0, /^height\s*=\s*/i, "30");
+          const r = getArgVal(1, /^radius\s*=\s*/i, "15");
+          addBlock({
+            type: "cq_op_cylinder",
+            fields: {
+              HEIGHT: Number(h) || 30,
+              RADIUS: Number(r) || 15,
+            },
+          });
+          continue;
+        }
+
+        // .sphere(r)
+        if (call.name === "sphere") {
+          const r = getArgVal(0, /^radius\s*=\s*/i, "15");
+          addBlock({
+            type: "cq_op_sphere",
+            fields: { RADIUS: Number(r) || 15 },
+          });
+          continue;
+        }
+
+        // .rect(w, h) -> cq_sketch_rect (ValueInput WIDTH, HEIGHT)
+        if (call.name === "rect") {
+          const wStr = getArgVal(0, /^(?:xLen|width)\s*=\s*/i, "20");
+          const hStr = getArgVal(1, /^(?:yLen|height)\s*=\s*/i, "20");
+          const wDef = parseExprToBlockDef(wStr) || { type: "math_number", fields: { NUM: 20 } };
+          const hDef = parseExprToBlockDef(hStr) || { type: "math_number", fields: { NUM: 20 } };
+          addBlock({
+            type: "cq_sketch_rect",
+            fields: {},
+            inputs: { WIDTH: wDef, HEIGHT: hDef },
+          });
+          continue;
+        }
+
+        // .circle(r) -> cq_sketch_circle (ValueInput RADIUS)
+        if (call.name === "circle") {
+          const rStr = getArgVal(0, /^radius\s*=\s*/i, "10");
+          const rDef = parseExprToBlockDef(rStr) || { type: "math_number", fields: { NUM: 10 } };
+          addBlock({
+            type: "cq_sketch_circle",
+            fields: {},
+            inputs: { RADIUS: rDef },
+          });
+          continue;
+        }
+
+        // .polygon(nSides=6, diameter=20)
+        if (call.name === "polygon") {
+          const n = getArgVal(0, /^nSides\s*=\s*/i, "6");
+          const d = getArgVal(1, /^diameter\s*=\s*/i, "20");
+          addBlock({
+            type: "cq_sketch_polygon",
+            fields: {
+              SIDES: Number(n) || 6,
+              DIAMETER: Number(d) || 20,
+            },
+          });
+          continue;
+        }
+
+        // .polyline(pts).close() 或 .polyline(pts)
+        if (call.name === "polyline") {
+          const hasClose = next1?.name === "close";
+          addBlock({
+            type: "cq_sketch_polyline",
+            fields: {
+              POINTS: call.argsStr || "[(0,0), (20,0), (20,15), (0,15)]",
+              CLOSE: hasClose ? "TRUE" : "FALSE",
+            },
+          });
+          if (hasClose) cIdx += 1;
+          continue;
+        }
+
+        // .slot2D(length, diameter, angle)
+        if (call.name === "slot2D") {
+          const l = getArgVal(0, /^length\s*=\s*/i, "30");
+          const d = getArgVal(1, /^diameter\s*=\s*/i, "10");
+          const a = getArgVal(2, /^angle\s*=\s*/i, "0");
+          addBlock({
+            type: "cq_sketch_slot",
+            fields: {
+              LENGTH: Number(l) || 30,
+              DIAMETER: Number(d) || 10,
+              ANGLE: Number(a) || 0,
+            },
+          });
+          continue;
+        }
+
+        // .ellipse(xr, yr)
+        if (call.name === "ellipse") {
+          const xr = getArgVal(0, /^x_radius\s*=\s*/i, "20");
+          const yr = getArgVal(1, /^y_radius\s*=\s*/i, "10");
+          addBlock({
+            type: "cq_sketch_ellipse",
+            fields: {
+              X_RADIUS: Number(xr) || 20,
+              Y_RADIUS: Number(yr) || 10,
+            },
+          });
+          continue;
+        }
+
+        // .extrude(dist) -> cq_op_extrude (ValueInput DISTANCE)
+        if (call.name === "extrude") {
+          const distStr = getArgVal(0, /^(?:until|distance)\s*=\s*/i, "10");
+          const distDef = parseExprToBlockDef(distStr) || { type: "math_number", fields: { NUM: 10 } };
+          addBlock({
+            type: "cq_op_extrude",
+            fields: {},
+            inputs: { DISTANCE: distDef },
+          });
+          continue;
+        }
+
+        // .revolve(angle, (0,0,0), (ax,ay,az)) -> cq_op_revolve (ValueInput ANGLE)
+        if (call.name === "revolve") {
+          const angleStr = getArgVal(0, /^angleDegrees\s*=\s*/i, "360");
+          const angleDef = parseExprToBlockDef(angleStr) || { type: "math_number", fields: { NUM: 360 } };
+          let axis = "X";
+          if (/\(\s*0\s*,\s*1\s*,\s*0\s*\)/.test(call.argsStr)) axis = "Y";
+          else if (/\(\s*0\s*,\s*0\s*,\s*1\s*\)/.test(call.argsStr)) axis = "Z";
+          addBlock({
+            type: "cq_op_revolve",
+            fields: { AXIS: axis },
+            inputs: { ANGLE: angleDef },
+          });
+          continue;
+        }
+
+        // .hole(diameter=d, depth=depth)
+        if (call.name === "hole") {
+          const d = getArgVal(0, /^diameter\s*=\s*/i, "5");
+          const depth = getArgVal(1, /^depth\s*=\s*/i, "10");
+          addBlock({
+            type: "cq_op_hole",
+            fields: {
+              DIAMETER: Number(d) || 5,
+              DEPTH: Number(depth) || 10,
+            },
+          });
+          continue;
+        }
+
+        // .cutBlind(-depth)
+        if (call.name === "cutBlind") {
+          const d = getArgVal(0, /^until\s*=\s*/i, "5");
+          addBlock({
+            type: "cq_op_cut_blind",
+            fields: { DEPTH: Math.abs(Number(d)) || 5 },
+          });
+          continue;
+        }
+
+        // .fillet(r) / .chamfer(l) / .shell(-t)
+        if (call.name === "fillet") {
+          addBlock({
+            type: "cq_op_fillet",
+            fields: { SELECTOR: "", RADIUS: Number(args[0]) || 2 },
+          });
+          continue;
+        }
+        if (call.name === "chamfer") {
+          addBlock({
+            type: "cq_op_chamfer",
+            fields: { SELECTOR: "", LENGTH: Number(args[0]) || 2 },
+          });
+          continue;
+        }
+        if (call.name === "shell") {
+          addBlock({
+            type: "cq_op_shell",
+            fields: { SELECTOR: ">Z", THICKNESS: Math.abs(Number(args[0])) || 2 },
+          });
+          continue;
+        }
+
+        // .text(txt, fontsize=12, distance=2)
+        if (call.name === "text") {
+          const txt = stripQuotes(getArgVal(0, /^txt\s*=\s*/i, "CAD")) || "CAD";
+          const size = getArgVal(1, /^fontsize\s*=\s*/i, "12");
+          const dist = getArgVal(2, /^distance\s*=\s*/i, "2");
+          addBlock({
+            type: "cq_op_text",
+            fields: {
+              TEXT: txt,
+              FONT_SIZE: Number(size) || 12,
+              DISTANCE: Number(dist) || 2,
+            },
+          });
+          continue;
+        }
+      }
+      continue;
+    }
+
+    // 9. 普通变量赋值 (如 radius = 10)
+    if (assign && /^[a-zA-Z_]\w*$/.test(lhsVar) && !["part", "result"].includes(lhsVar)) {
+      const valDef = parseExprToBlockDef(rhsExpr);
+      addBlock({
+        type: "logoup_set_var",
+        fields: { VAR: lhsVar },
+        inputs: valDef ? { VALUE: valDef } : undefined,
+      });
+      continue;
+    }
+  }
+
+  return wrapWithSingleStartBlock(blocks);
+}
+
+/**
+ * ==================== 模式 3: build123d 专属解析器 ====================
+ * 严格生成 b3d_* 积木与通用控制流积木，绝不转串为 logoup_* 或 cq_* 几何积木
+ */
+export function parseBuild123dModeCode(code: string): ParsedBlockDef[] {
   // 预处理多语句行 (如分号或同行误拼)
   const rawLines = code.split(/\r?\n/);
   const lines: string[] = [];
@@ -1136,8 +1992,8 @@ export function parseBuild123dCode(code: string): ParsedBlockDef[] {
 
   const blocks: ParsedBlockDef[] = [];
 
-  // 当前激活的容器栈: { indent: number, block: ParsedBlockDef, isExplicitClose?: boolean }
-  const stack: { indent: number; block: ParsedBlockDef; isExplicitClose?: boolean }[] = [];
+  // 当前激活的容器栈
+  const stack: ContainerStackEntry[] = [];
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
     const rawLine = lines[lineIndex];
@@ -1179,19 +2035,23 @@ export function parseBuild123dCode(code: string): ParsedBlockDef[] {
       }
     }
 
-    const currentContainer = stack.length > 0 ? stack[stack.length - 1].block : null;
-
-    const addBlock = (b: ParsedBlockDef) => {
-      if (currentContainer) {
-        if (!currentContainer.children) currentContainer.children = [];
-        currentContainer.children.push(b);
-      } else {
-        blocks.push(b);
+    const topEntry = stack.length > 0 ? stack[stack.length - 1] : null;
+    const getCurrentList = (): ParsedBlockDef[] => {
+      if (!topEntry) return blocks;
+      if (topEntry.isElseBranch) {
+        if (!topEntry.block.elseChildren) topEntry.block.elseChildren = [];
+        return topEntry.block.elseChildren;
       }
+      if (!topEntry.block.children) topEntry.block.children = [];
+      return topEntry.block.children;
     };
 
-    // 0. 优先解析 LogoUp 语句体系 (控制流、2D/3D绘图构件、LogoUp 开始标志等)
-    if (parseLogoUpStatement(trimmed, indent, stack, addBlock)) {
+    const addBlock = (b: ParsedBlockDef) => {
+      getCurrentList().push(b);
+    };
+
+    // 0. 仅解析通用控制流语句 (for, if, else, def, return)，严禁调用 LogoUp 构件解析器以防转串
+    if (parseSharedControlStatement(trimmed, indent, stack, addBlock, getCurrentList)) {
       continue;
     }
 
@@ -1220,11 +2080,10 @@ export function parseBuild123dCode(code: string): ParsedBlockDef[] {
       continue;
     }
 
-    // 3. with BuildSketch(...) 容器 (支持任意面选择与嵌套参数)
+    // 3. with BuildSketch(...) 容器 (支持基准平面与零件各方位表面选择)
     if (/(?:^|\s|\b)with\s+BuildSketch\s*\(/i.test(trimmed)) {
       const call = extractWithBlockCall(trimmed, "BuildSketch");
       let plane = "XY";
-      let faceExpr = "";
       let parentVar = "part";
 
       // 从当前激活的容器栈中查找最近的 BuildPart 变量名
@@ -1240,9 +2099,8 @@ export function parseBuild123dCode(code: string): ParsedBlockDef[] {
 
       if (call && call.argsStr) {
         const arg = call.argsStr.trim();
-        faceExpr = arg;
 
-        // 若参数中显式写有实体变量名，如 example.faces()
+        // 若参数中显式写有实体变量名，如 part.faces()
         const varMatch = arg.match(/^([a-zA-Z_]\w*)\.faces\(\)/i);
         if (varMatch && varMatch[1]) {
           parentVar = varMatch[1];
@@ -1268,7 +2126,7 @@ export function parseBuild123dCode(code: string): ParsedBlockDef[] {
         } else if (/Plane\.XY/i.test(arg) || !arg) {
           plane = "XY";
         } else {
-          plane = "CUSTOM";
+          plane = "TOP_FACE";
         }
       }
 
@@ -1280,7 +2138,6 @@ export function parseBuild123dCode(code: string): ParsedBlockDef[] {
         fields: {
           PLANE: plane,
           VAR_NAME: varName,
-          FACE_EXPR: faceExpr || `${parentVar}.faces().sort_by(Axis.Z)[-1]`,
           PARENT_VAR: parentVar,
           HAS_ALIAS: hasAlias,
         },
@@ -1958,6 +2815,17 @@ export function parseBuild123dCode(code: string): ParsedBlockDef[] {
       continue;
     }
 
+    // 19.5 3D 特征: loft (放样成体)
+    if (/(?:^|\s|\b)loft\s*\((.*)\)/i.test(trimmed)) {
+      addBlock({
+        type: "b3d_loft",
+        fields: {
+          MODE: extractMode(trimmed),
+        },
+      });
+      continue;
+    }
+
     // 20. 3D 特征: fillet
     if (/(?:^|\s|\b)fillet\s*\((.*)\)/i.test(trimmed)) {
       const innerMatch = trimmed.match(/fillet\s*\((.*)\)/i);
@@ -2089,33 +2957,6 @@ export function parseBuild123dCode(code: string): ParsedBlockDef[] {
         type: "b3d_color",
         fields: {
           COLOR: cMatch ? cMatch[1] : "#3b82f6",
-        },
-      });
-      continue;
-    }
-
-    // ==================== 兼容旧 CadQuery 语句 ====================
-    if (/cq\.Workplane\s*\(\s*["'](XY|XZ|YZ)["']\s*\)/i.test(trimmed)) {
-      const plane = extractPlane(trimmed);
-      const block: ParsedBlockDef = {
-        type: "b3d_build_part",
-        fields: { PLANE: plane },
-        children: [],
-      };
-      addBlock(block);
-      stack.push({ indent, block });
-      continue;
-    }
-
-    if (/\.box\s*\((.*?)\)/i.test(trimmed)) {
-      const nums = trimmed.match(/([-\d.]+)/g) || [];
-      addBlock({
-        type: "b3d_box",
-        fields: {
-          LENGTH: nums[0] ? parseFloat(nums[0]) : 20,
-          WIDTH: nums[1] ? parseFloat(nums[1]) : 20,
-          HEIGHT: nums[2] ? parseFloat(nums[2]) : 10,
-          MODE: "ADD",
         },
       });
       continue;
@@ -2375,12 +3216,6 @@ export function parseBuild123dCode(code: string): ParsedBlockDef[] {
     });
   }
 
-  // 如果已经包含 LogoUp 图形积木体系，则无需额外包裹 build123d 容器
-  const hasLogoUpBlock = blocks.some((b) => b.type.startsWith("logoup_"));
-  if (hasLogoUpBlock) {
-    return blocks;
-  }
-
   // 仅当包含需要 BuildPart 容器的 3D 实体/特征，且未被任何顶层容器包裹时，才自动包裹首层 BuildPart
   const hasAnyContainer = blocks.some(
     (b) =>
@@ -2406,13 +3241,36 @@ export function parseBuild123dCode(code: string): ParsedBlockDef[] {
   if (!hasAnyContainer && requiresPartContainer) {
     const rootPart: ParsedBlockDef = {
       type: "b3d_build_part",
-      fields: { PLANE: "XY" },
+      fields: { PLANE: "XY", VAR_NAME: "part" },
       children: [...blocks],
     };
-    return [rootPart];
+    return wrapWithSingleStartBlock([rootPart]);
   }
 
-  return blocks;
+  return wrapWithSingleStartBlock(blocks);
+}
+
+/**
+ * 根据指定的工作模式将 Python 代码严格解析为对应模式的积木树
+ * 若未显式指定 mode，则根据代码导入头自动推断模式
+ */
+export function parseBuild123dCode(code: string, mode?: WorkingMode): ParsedBlockDef[] {
+  let effectiveMode: WorkingMode = mode || "build123d";
+  if (!mode) {
+    if (/import\s+cadquery|cq\.Workplane/.test(code)) {
+      effectiveMode = "cadquery";
+    } else if (/logoup3d|#\s*🏁\s*开始\s*LogoUp\s*3D/.test(code)) {
+      effectiveMode = "logoup";
+    }
+  }
+
+  if (effectiveMode === "logoup") {
+    return parseLogoUpModeCode(code);
+  }
+  if (effectiveMode === "cadquery") {
+    return parseCadQueryModeCode(code);
+  }
+  return parseBuild123dModeCode(code);
 }
 
 /**
@@ -2424,7 +3282,12 @@ function buildValueBlock(
 ): { block: Blockly.BlockSvg; count: number } {
   const block = workspace.newBlock(valDef.type) as Blockly.BlockSvg;
   for (const [k, v] of Object.entries(valDef.fields)) {
-    block.setFieldValue(v as any, k);
+    if (block.getField(k)) {
+      block.setFieldValue(v as any, k);
+    }
+  }
+  if (valDef.type === "math_number") {
+    block.setShadow(true);
   }
   let count = 1;
 
@@ -2498,12 +3361,21 @@ function buildBlockTree(
 
       totalCount++;
 
-      // 如果含有子容器槽位 (DO statement)
+      // 如果含有子容器槽位 (DO 或 BRANCH statement)
       if (def.children && def.children.length > 0) {
-        const doInput = block.getInput("DO");
+        const doInput = block.getInput("DO") || block.getInput("BRANCH");
         if (doInput && doInput.connection) {
           const subResult = buildBlockTree(workspace, def.children, doInput.connection);
           totalCount += subResult.count;
+        }
+      }
+
+      // 如果含有否则分支槽位 (ELSE statement)
+      if (def.elseChildren && def.elseChildren.length > 0) {
+        const elseInput = block.getInput("ELSE");
+        if (elseInput && elseInput.connection) {
+          const elseResult = buildBlockTree(workspace, def.elseChildren, elseInput.connection);
+          totalCount += elseResult.count;
         }
       }
 
@@ -2517,11 +3389,12 @@ function buildBlockTree(
 }
 
 /**
- * 将 Python (build123d / CadQuery) 源码逆向解析并注入渲染至 Blockly 工作区
+ * 将 Python (LogoUp 3D / CadQuery / build123d) 源码严格按当前工作模式逆向解析并注入至 Blockly 工作区
  */
 export function convertPythonToBlockly(
   code: string,
-  workspace: Blockly.WorkspaceSvg | null
+  workspace: Blockly.WorkspaceSvg | null,
+  mode?: WorkingMode
 ): { success: boolean; blockCount: number; message: string } {
   if (!workspace) {
     return { success: false, blockCount: 0, message: "积木工作区未初始化或未加载" };
@@ -2531,13 +3404,15 @@ export function convertPythonToBlockly(
     return { success: false, blockCount: 0, message: "待转换代码为空" };
   }
 
-  const parsed = parseBuild123dCode(code);
+  const parsed = parseBuild123dCode(code, mode);
 
   if (parsed.length === 0) {
+    const modeLabel =
+      mode === "logoup" ? "LogoUp 3D" : mode === "cadquery" ? "CadQuery" : "build123d";
     return {
       success: false,
       blockCount: 0,
-      message: "未在代码中识别到可转换的 build123d 几何建模语句（支持 BuildPart、Box、Cylinder、BuildSketch、extrude、Locations 等）",
+      message: `未在代码中识别到可转换的 ${modeLabel} 几何建模语句，请确认当前代码与所选工作模式一致`,
     };
   }
 
@@ -2554,10 +3429,12 @@ export function convertPythonToBlockly(
 
     Blockly.Events.enable();
 
+    const modeLabel =
+      mode === "logoup" ? "LogoUp 3D" : mode === "cadquery" ? "CadQuery" : "build123d";
     return {
       success: true,
       blockCount: count,
-      message: `成功逆向解析并还原 ${count} 个 build123d 几何积木！`,
+      message: `成功按 ${modeLabel} 模式逆向解析并还原 ${count} 个积木！`,
     };
   } catch (err: any) {
     Blockly.Events.enable();
@@ -2570,4 +3447,4 @@ export function convertPythonToBlockly(
 }
 
 // 保持别名导出
-export const parseCadQueryCode = parseBuild123dCode;
+export const parseCadQueryCode = (code: string) => parseCadQueryModeCode(code);

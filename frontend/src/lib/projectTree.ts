@@ -276,15 +276,7 @@ export function createDefaultProject(
   projectName: string = "CadProject",
   initialCode: string = ""
 ): ProjectWorkspace {
-  const defaultCode =
-    initialCode ||
-    `from build123d import *
-
-# 主入口建模脚本
-with BuildPart() as example:
-    Box(length=30, width=30, height=10)
-    Cylinder(radius=8, height=20)
-`;
+  const defaultCode = initialCode ?? "";
 
   const mainFile: ProjectFileNode = {
     id: "main_file",
@@ -348,7 +340,7 @@ export function exportWorkspaceArchive(workspace: ProjectWorkspace): ProjectExpo
  * 从多文件归档数据还原工作区
  */
 export function importWorkspaceFromArchive(archiveData: any): ProjectWorkspace {
-  if (archiveData.version === "2.0" && archiveData.files) {
+  if (archiveData && archiveData.files && typeof archiveData.files === "object") {
     const projectName = archiveData.projectName || "导入工程";
     const entrypoint = archiveData.entrypoint || "main.py";
 

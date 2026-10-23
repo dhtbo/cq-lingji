@@ -22,6 +22,8 @@ import {
   FileJson,
   FileText,
   UploadCloud,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { ProjectFileNode, ProjectWorkspace, NodeType } from "@/types/project";
 import { normalizePath } from "@/lib/projectTree";
@@ -469,120 +471,92 @@ export function ProjectExplorer({
     );
   };
 
+  if (!isOpen) {
+    return null;
+  }
+
   return (
     <div
-      className={`flex flex-col h-full transition-all duration-200 ${
-        isOpen ? "w-64" : "w-10"
-      } ${
+      className={`flex flex-col h-full w-full transition-all duration-200 ${
         isLightMode
           ? "bg-[#ffffff] border-r border-slate-200 text-slate-700"
           : "bg-slate-900 border-r border-slate-800 text-slate-300"
       }`}
     >
-      {/* 侧栏顶栏 */}
+      {/* 侧栏顶栏（收起/展开按钮已移至右侧分割线居中位置） */}
       <div
-        className={`flex items-center justify-between px-2.5 py-2 border-b shrink-0 ${
+        className={`flex items-center justify-between px-2.5 py-2 border-b shrink-0 h-9 ${
           isLightMode ? "bg-slate-50 border-slate-200" : "bg-slate-950/70 border-slate-800"
         }`}
       >
-        {isOpen ? (
-          <>
-            <div className="flex items-center gap-1.5 truncate">
-              <span
-                className={`text-xs font-semibold truncate ${
-                  isLightMode ? "text-slate-800" : "text-slate-200"
-                }`}
-                title={workspace.name}
-              >
-                {workspace.name || "CAD 项目资源"}
-              </span>
-            </div>
-            <div className="flex items-center gap-0.5">
-              {/* 新建根目录文件 */}
-              <button
-                onClick={() => startCreate("", "file")}
-                className={`p-1 rounded transition-colors ${
-                  isLightMode
-                    ? "hover:text-emerald-700 text-slate-500 hover:bg-slate-200"
-                    : "hover:text-white text-slate-400 hover:bg-slate-800"
-                }`}
-                title="新建根目录文件"
-              >
-                <FilePlus className="w-3.5 h-3.5" />
-              </button>
-              {/* 新建根目录文件夹 */}
-              <button
-                onClick={() => startCreate("", "directory")}
-                className={`p-1 rounded transition-colors ${
-                  isLightMode
-                    ? "hover:text-amber-700 text-slate-500 hover:bg-slate-200"
-                    : "hover:text-white text-slate-400 hover:bg-slate-800"
-                }`}
-                title="新建根目录文件夹"
-              >
-                <FolderPlus className="w-3.5 h-3.5" />
-              </button>
-              {/* 导入本地文件 (STL, STEP, SVG, DXF, PY等) */}
-              <button
-                onClick={() => triggerImportLocalFiles("")}
-                className={`p-1 rounded transition-colors ${
-                  isLightMode
-                    ? "hover:text-emerald-700 text-slate-500 hover:bg-slate-200"
-                    : "hover:text-emerald-400 text-slate-400 hover:bg-slate-800"
-                }`}
-                title="导入本地文件 (STL, STEP, SVG, DXF, PY, JSON 等)"
-              >
-                <UploadCloud className="w-3.5 h-3.5" />
-              </button>
-              {/* 导出项目工程 */}
-              <button
-                onClick={onExportProject}
-                className={`p-1 rounded transition-colors ${
-                  isLightMode
-                    ? "hover:text-sky-700 text-slate-500 hover:bg-slate-200"
-                    : "hover:text-white text-slate-400 hover:bg-slate-800"
-                }`}
-                title="导出工程文件 (.cqproj.json)"
-              >
-                <Download className="w-3.5 h-3.5" />
-              </button>
-              {/* 导入项目工程 */}
-              <button
-                onClick={() => projectArchiveInputRef.current?.click()}
-                className={`p-1 rounded transition-colors ${
-                  isLightMode
-                    ? "hover:text-slate-900 text-slate-500 hover:bg-slate-200"
-                    : "hover:text-white text-slate-400 hover:bg-slate-800"
-                }`}
-                title="打开工程存档 (.cqproj.json)"
-              >
-                <Upload className="w-3.5 h-3.5" />
-              </button>
-              {/* 折叠收起按钮 */}
-              <button
-                onClick={onToggleOpen}
-                className={`p-1 rounded transition-colors ml-0.5 ${
-                  isLightMode
-                    ? "hover:text-slate-900 text-slate-500 hover:bg-slate-200"
-                    : "hover:text-white text-slate-400 hover:bg-slate-800"
-                }`}
-                title="收起资源管理器"
-              >
-                <ChevronRight className="w-3.5 h-3.5 rotate-180" />
-              </button>
-            </div>
-          </>
-        ) : (
+        <div className="flex items-center gap-1.5 min-w-0">
+          <FolderOpen className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+          <span className="text-[11px] font-semibold text-slate-400 select-none truncate">
+            文件管理器
+          </span>
+        </div>
+        <div className="flex items-center gap-0.5">
+          {/* 新建根目录文件 */}
           <button
-            onClick={onToggleOpen}
-            className={`w-full flex justify-center py-1 rounded transition-colors ${
-              isLightMode ? "hover:text-slate-900 text-slate-500 hover:bg-slate-100" : "hover:text-white text-slate-400 hover:bg-slate-800"
+            onClick={() => startCreate("", "file")}
+            className={`p-1 rounded transition-colors ${
+              isLightMode
+                ? "hover:text-emerald-700 text-slate-500 hover:bg-slate-200"
+                : "hover:text-white text-slate-400 hover:bg-slate-800"
             }`}
-            title="展开项目资源管理器"
+            title="新建根目录文件"
           >
-            <Folder className="w-4 h-4 text-amber-500" />
+            <FilePlus className="w-3.5 h-3.5" />
           </button>
-        )}
+          {/* 新建根目录文件夹 */}
+          <button
+            onClick={() => startCreate("", "directory")}
+            className={`p-1 rounded transition-colors ${
+              isLightMode
+                ? "hover:text-amber-700 text-slate-500 hover:bg-slate-200"
+                : "hover:text-white text-slate-400 hover:bg-slate-800"
+            }`}
+            title="新建根目录文件夹"
+          >
+            <FolderPlus className="w-3.5 h-3.5" />
+          </button>
+          {/* 导入本地文件 (STL, STEP, SVG, DXF, PY等) */}
+          <button
+            onClick={() => triggerImportLocalFiles("")}
+            className={`p-1 rounded transition-colors ${
+              isLightMode
+                ? "hover:text-emerald-700 text-slate-500 hover:bg-slate-200"
+                : "hover:text-emerald-400 text-slate-400 hover:bg-slate-800"
+            }`}
+            title="导入本地文件 (STL, STEP, SVG, DXF, PY, JSON 等)"
+          >
+            <UploadCloud className="w-3.5 h-3.5" />
+          </button>
+          {/* 导出项目工程 */}
+          <button
+            onClick={onExportProject}
+            className={`p-1 rounded transition-colors ${
+              isLightMode
+                ? "hover:text-sky-700 text-slate-500 hover:bg-slate-200"
+                : "hover:text-white text-slate-400 hover:bg-slate-800"
+            }`}
+            title="导出工程文件 (.cqproj.json)"
+          >
+            <Download className="w-3.5 h-3.5" />
+          </button>
+          {/* 导入项目工程 */}
+          <button
+            onClick={() => projectArchiveInputRef.current?.click()}
+            className={`p-1 rounded transition-colors ${
+              isLightMode
+                ? "hover:text-slate-900 text-slate-500 hover:bg-slate-200"
+                : "hover:text-white text-slate-400 hover:bg-slate-800"
+            }`}
+            title="打开工程存档 (.cqproj.json)"
+          >
+            <Upload className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* 隐藏的工程存档上传 input */}

@@ -7,13 +7,15 @@ import { CATEGORY_COLORS, CQ_TYPES } from "./types";
 export function registerOperation3DBlocks() {
   // --- 语句式 (Scratch 风格垂直堆叠) ---
 
-  // 1. 实体拉伸
+  // 1. 实体拉伸 (支持 ValueInput 接入数值阴影块、变量或运算表达式)
   Blockly.Blocks["cq_op_extrude"] = {
     init: function () {
       this.appendDummyInput()
-        .appendField("📦 拉伸成体 extrude")
-        .appendField("高度:")
-        .appendField(new Blockly.FieldNumber(10, 0.1), "DISTANCE");
+        .appendField("📦 拉伸成体 extrude");
+      this.appendValueInput("DISTANCE")
+        .setCheck(null)
+        .appendField("高度:");
+      this.setInputsInline(true);
       this.setPreviousStatement(true, null);
       this.setNextStatement(true, null);
       this.setColour(CATEGORY_COLORS.OPERATION_3D);
@@ -297,13 +299,15 @@ export function registerOperation3DBlocks() {
     },
   };
 
-  // 13. 360° 旋转拉伸成型 (霍尔推进喷管)
+  // 13. 360° 旋转拉伸成型 (霍尔推进喷管，支持 ValueInput 接入数值阴影块、变量或运算表达式)
   Blockly.Blocks["cq_op_revolve"] = {
     init: function () {
       this.appendDummyInput()
-        .appendField("🔄 旋转成型体 revolve")
-        .appendField("旋转角度:")
-        .appendField(new Blockly.FieldNumber(360, 1, 360), "ANGLE")
+        .appendField("🔄 旋转成型体 revolve");
+      this.appendValueInput("ANGLE")
+        .setCheck(null)
+        .appendField("旋转角度:");
+      this.appendDummyInput()
         .appendField("旋转轴:")
         .appendField(
           new Blockly.FieldDropdown([
@@ -313,6 +317,7 @@ export function registerOperation3DBlocks() {
           ]),
           "AXIS"
         );
+      this.setInputsInline(true);
       this.setPreviousStatement(true, null);
       this.setNextStatement(true, null);
       this.setColour(CATEGORY_COLORS.OPERATION_3D);

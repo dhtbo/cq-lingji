@@ -55,7 +55,28 @@
 
 ## 🚀 快速启动指南
 
-### 1. 启动后端服务 (FastAPI)
+### 方式一：一键启动脚本（推荐）
+
+在 Windows 环境下，可直接双击运行根目录下的批处理脚本，或在终端中执行 PowerShell 脚本，自动完成环境校验、端口清理、前后端服务拉起与浏览器打开：
+
+```powershell
+# 一键启动前后端服务并自动打开浏览器 (或直接双击 start.bat)
+.\start.ps1
+
+# 常用可选参数：
+# .\start.ps1 -NoBrowser                  # 启动服务但不自动弹窗打开浏览器
+# .\start.ps1 -Prod                       # 前端以生产模式 (next start) 启动
+# .\start.ps1 -BackendPort 8000 -FrontendPort 3000
+
+# 一键停止所有前后端服务 (或直接双击 stop.bat)
+.\stop.ps1
+```
+
+---
+
+### 方式二：手动分别启动
+
+#### 1. 启动后端服务 (FastAPI)
 
 ```bash
 # 进入根目录

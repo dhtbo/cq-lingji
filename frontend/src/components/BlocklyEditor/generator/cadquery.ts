@@ -1,19 +1,36 @@
 import * as Blockly from "blockly";
 import { pythonGenerator, Order } from "blockly/python";
+import { registerBuild123dGenerator } from "./build123d";
+import { registerLogoUp3DGenerator } from "./logoup3d";
 
-let generatorRegistered = false;
+/**
+ * 辅助：优先从 ValueInput 插槽提取表达式代码，兼容回退读取 Field 值
+ */
+function getValOrField(
+  block: Blockly.Block,
+  name: string,
+  defaultVal: string | number
+): string | number {
+  const valCode = pythonGenerator.valueToCode(block, name, Order.NONE);
+  if (valCode && valCode.trim() !== "") {
+    return valCode.trim();
+  }
+  const fieldVal = block.getFieldValue(name);
+  if (fieldVal !== null && fieldVal !== undefined && String(fieldVal).trim() !== "") {
+    return fieldVal;
+  }
+  return defaultVal;
+}
 
 /**
  * 注册 CadQuery Python 积木代码生成器
  */
 export function registerCadQueryGenerator() {
-  if (generatorRegistered) return;
-
   // --- 初始化积木 ---
 
   pythonGenerator.forBlock["cq_init_workplane"] = function (block: Blockly.Block) {
     const plane = block.getFieldValue("PLANE") || "XY";
-    return `import cadquery as cq\n\npart = cq.Workplane("${plane}")\n`;
+    return `part = cq.Workplane("${plane}")\n`;
   };
 
   pythonGenerator.forBlock["cq_chain_workplane"] = function (block: Blockly.Block) {
@@ -23,7 +40,7 @@ export function registerCadQueryGenerator() {
 
   pythonGenerator.forBlock["cq_chain_assign"] = function (block: Blockly.Block) {
     const expr = pythonGenerator.valueToCode(block, "EXPR", Order.NONE) || 'cq.Workplane("XY")';
-    return `import cadquery as cq\n\npart = ${expr}\n`;
+    return `part = ${expr}\n`;
   };
 
   pythonGenerator.forBlock["cq_chain_part_ref"] = function (block: Blockly.Block) {
@@ -34,13 +51,13 @@ export function registerCadQueryGenerator() {
   // --- 2D 草图绘制 ---
 
   pythonGenerator.forBlock["cq_sketch_rect"] = function (block: Blockly.Block) {
-    const w = block.getFieldValue("WIDTH") ?? 20;
-    const h = block.getFieldValue("HEIGHT") ?? 20;
+    const w = getValOrField(block, "WIDTH", 20);
+    const h = getValOrField(block, "HEIGHT", 20);
     return `part = part.rect(${w}, ${h})\n`;
   };
 
   pythonGenerator.forBlock["cq_sketch_circle"] = function (block: Blockly.Block) {
-    const r = block.getFieldValue("RADIUS") ?? 10;
+    const r = getValOrField(block, "RADIUS", 10);
     return `part = part.circle(${r})\n`;
   };
 
@@ -97,7 +114,7 @@ export function registerCadQueryGenerator() {
   // --- 3D 实体特征操作 ---
 
   pythonGenerator.forBlock["cq_op_extrude"] = function (block: Blockly.Block) {
-    const dist = block.getFieldValue("DISTANCE") ?? 10;
+    const dist = getValOrField(block, "DISTANCE", 10);
     return `part = part.extrude(${dist})\n`;
   };
 
@@ -200,7 +217,7 @@ export function registerCadQueryGenerator() {
 
   // 13. 旋转成型 (霍尔推进喷管)
   pythonGenerator.forBlock["cq_op_revolve"] = function (block: Blockly.Block) {
-    const angle = block.getFieldValue("ANGLE") ?? 360;
+    const angle = getValOrField(block, "ANGLE", 360);
     const axis = block.getFieldValue("AXIS") || "X";
     let axisVec = "(1, 0, 0)";
     if (axis === "Y") axisVec = "(0, 1, 0)";
@@ -332,21 +349,50 @@ export function registerCadQueryGenerator() {
     return code;
   };
 
-  generatorRegistered = true;
 }
 
 /**
  * 将 Blockly Workspace 转化为整洁的 CadQuery Python 源码
  */
 export function generateCadQueryPython(workspace: Blockly.WorkspaceSvg): string {
+  registerBuild123dGenerator();
+  registerLogoUp3DGenerator();
   registerCadQueryGenerator();
-  let code = pythonGenerator.workspaceToCode(workspace);
 
-  // 保证代码自包含 import 语句
-  if (!code.includes("import cadquery as cq")) {
-    code = "import cadquery as cq\n\n" + code;
+  const allBlocks = workspace.getAllBlocks(false).filter((b) => b.isEnabled() && !b.isShadow());
+  if (allBlocks.length === 0) {
+    return "";
   }
 
-  // 确保最终有有效返回
-  return code.trim() + "\n";
+  // 如果画布上仅有孤立的「开始」或「新建基准面」积木，尚未拼接任何几何建模步骤，返回空字符串以避免触发空 Workplane 报错
+  const meaningfulBlocks = allBlocks.filter(
+    (b) => b.type !== "logoup_start" && b.type !== "cq_init_workplane"
+  );
+  if (meaningfulBlocks.length === 0) {
+    return "";
+  }
+
+  let rawCode = pythonGenerator.workspaceToCode(workspace);
+  // 剔除「开始」帽子积木生成的 LogoUp 标记注释及非 CadQuery 导入语句
+  rawCode = rawCode
+    .replace(/^#\s*🏁\s*开始\s*LogoUp\s*3D\s*造型\s*\n?/gm, "")
+    .replace(/^from\s+backend\.logoup3d\s+import\s+\*\s*\n?/gm, "")
+    .replace(/^from\s+build123d\s+import\s+\*\s*\n?/gm, "")
+    .trim();
+  if (!rawCode) {
+    return "";
+  }
+
+  // 若用户直接从「开始」积木下拼接了 part = part.xxx(...) 而未显式放置 cq_init_workplane，自动补齐默认 XY 工作平面初始化
+  if (!/part\s*=\s*cq\.Workplane\s*\(/.test(rawCode) && /\bpart\s*\./.test(rawCode)) {
+    rawCode = `part = cq.Workplane("XY")\n` + rawCode;
+  }
+
+  // 保证代码自包含 import 语句
+  let fullCode = rawCode;
+  if (!fullCode.includes("import cadquery as cq")) {
+    fullCode = "import cadquery as cq\n\n" + fullCode;
+  }
+
+  return fullCode.trim() + "\n";
 }

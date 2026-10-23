@@ -1,8 +1,6 @@
 import * as Blockly from "blockly";
 import { pythonGenerator, Order } from "blockly/python";
 
-let generatorRegistered = false;
-
 /**
  * 辅助函数：将模式转换为 build123d 的 mode=Mode.XXX 字符串
  */
@@ -16,8 +14,6 @@ function getModeParam(mode: string): string {
  * 注册 build123d Python 积木代码生成器
  */
 export function registerBuild123dGenerator() {
-  if (generatorRegistered) return;
-
   // 设置 Python 标准 4 空格缩进
   pythonGenerator.INDENT = "    ";
 
@@ -34,9 +30,8 @@ export function registerBuild123dGenerator() {
   pythonGenerator.forBlock["b3d_build_sketch"] = function (block: Blockly.Block) {
     const varName = (block.getFieldValue("VAR_NAME") || "").trim();
     const plane = block.getFieldValue("PLANE") || "XY";
-    const customExpr = (block.getFieldValue("FACE_EXPR") || "").trim();
 
-    // 智能获取上层 BuildPart 的实体变量名 (例如 example 或 part)
+    // 智能获取上层 BuildPart 的实体变量名 (例如 part)
     let parentVar = (block.getFieldValue("PARENT_VAR") || "").trim() || "part";
     let cur = block.getParent();
     while (cur) {
@@ -63,8 +58,6 @@ export function registerBuild123dGenerator() {
       planeArg = `${parentVar}.faces().sort_by(Axis.Y)[-1]`;
     } else if (plane === "BACK_FACE") {
       planeArg = `${parentVar}.faces().sort_by(Axis.Y)[0]`;
-    } else if (plane === "CUSTOM") {
-      planeArg = customExpr || `${parentVar}.faces().sort_by(Axis.Z)[-1]`;
     } else if (plane === "XZ") {
       planeArg = "Plane.XZ";
     } else if (plane === "YZ") {
@@ -433,7 +426,7 @@ export function registerBuild123dGenerator() {
   };
 
   pythonGenerator.forBlock["cq_op_extrude"] = function (block: Blockly.Block) {
-    const dist = block.getFieldValue("DISTANCE") ?? 10;
+    const dist = pythonGenerator.valueToCode(block, "DISTANCE", Order.NONE) || block.getFieldValue("DISTANCE") || 10;
     return `    extrude(amount=${dist})\n`;
   };
 
@@ -454,13 +447,13 @@ export function registerBuild123dGenerator() {
   };
 
   pythonGenerator.forBlock["cq_sketch_rect"] = function (block: Blockly.Block) {
-    const w = block.getFieldValue("WIDTH") ?? 20;
-    const h = block.getFieldValue("HEIGHT") ?? 20;
+    const w = pythonGenerator.valueToCode(block, "WIDTH", Order.NONE) || block.getFieldValue("WIDTH") || 20;
+    const h = pythonGenerator.valueToCode(block, "HEIGHT", Order.NONE) || block.getFieldValue("HEIGHT") || 20;
     return `    with BuildSketch() as sk:\n        Rectangle(${w}, ${h})\n`;
   };
 
   pythonGenerator.forBlock["cq_sketch_circle"] = function (block: Blockly.Block) {
-    const r = block.getFieldValue("RADIUS") ?? 10;
+    const r = pythonGenerator.valueToCode(block, "RADIUS", Order.NONE) || block.getFieldValue("RADIUS") || 10;
     return `    with BuildSketch() as sk:\n        Circle(radius=${r})\n`;
   };
 
@@ -569,36 +562,49 @@ export function registerBuild123dGenerator() {
     const varName = block.getFieldValue("VAR_NAME") || "t";
     return `${varName}.home()\n`;
   };
-
-  generatorRegistered = true;
 }
 
 import { registerLogoUp3DGenerator } from "./logoup3d";
+import type { WorkingMode } from "../toolbox";
 
 /**
- * 将 Blockly 工作区转换为规范的 build123d / LogoUp3D 脚本代码
-/**
- * 将 Blockly 工作区完整转换为 build123d / LogoUp 3D Python 源码
+ * 将 Blockly 工作区完整转换为 build123d 或 LogoUp 3D Python 源码
+ * 严格根据 mode ('build123d' | 'logoup') 隔离导入头与注释，防止模式串扰
  */
-export function workspaceToBuild123d(workspace: Blockly.Workspace): string {
+export function workspaceToBuild123d(
+  workspace: Blockly.Workspace,
+  mode: WorkingMode = "build123d"
+): string {
   registerBuild123dGenerator();
   registerLogoUp3DGenerator();
 
-  const allBlocks = workspace.getAllBlocks(false);
+  const allBlocks = workspace.getAllBlocks(false).filter((b) => !b.isShadow());
   if (allBlocks.length === 0) {
     return "";
   }
 
-  // 检查是否存在 logoup_start 积木
-  const startBlocks = allBlocks.filter((b) => b.type === "logoup_start");
-  let rawCode = "";
+  pythonGenerator.init(workspace);
 
-  if (startBlocks.length > 0) {
-    // 若存在开始积木，仅从各开始积木开始向下提取相连的代码链
+  if (mode === "logoup") {
+    const topBlocks = workspace.getTopBlocks(true);
     const codeSegments: string[] = [];
+
+    // 1. 提取顶层自定义函数定义积木 (logoup_def_func)
+    for (const topBlock of topBlocks) {
+      if (!topBlock.isEnabled()) continue;
+      if (topBlock.type === "logoup_def_func") {
+        const blockCode = pythonGenerator.blockToCode(topBlock);
+        const codeStr = Array.isArray(blockCode) ? blockCode[0] : (blockCode as string);
+        if (codeStr && codeStr.trim()) {
+          codeSegments.push(codeStr.trim());
+        }
+      }
+    }
+
+    // 2. 提取「开始」(logoup_start) 积木下挂载的主程序积木链
+    const startBlocks = topBlocks.filter((b) => b.type === "logoup_start");
     for (const startBlock of startBlocks) {
       if (!startBlock.isEnabled()) continue;
-      // 只有当开始积木后面连接了实际构件或指令积木时才生成
       const nextBlock = startBlock.getNextBlock();
       if (!nextBlock || !nextBlock.isEnabled()) continue;
 
@@ -608,68 +614,47 @@ export function workspaceToBuild123d(workspace: Blockly.Workspace): string {
         codeSegments.push(codeStr.trim());
       }
     }
-    rawCode = codeSegments.join("\n\n");
-  } else {
-    // 兼容传统的非 LogoUp 积木（如 b3d_build_part 等）
-    const b3dBlocks = allBlocks.filter((b) => b.isEnabled() && b.type.startsWith("b3d_"));
-    if (b3dBlocks.length > 0) {
-      rawCode = pythonGenerator.workspaceToCode(workspace);
-    } else {
-      // 仅有未连接到开始积木的孤立块，不生成任何代码
+
+    const cleanCode = codeSegments.join("\n\n").trim();
+    if (!cleanCode || cleanCode === "# 🏁 开始 LogoUp 3D 造型") {
       return "";
     }
+
+    let fullCode = "";
+    if (!cleanCode.includes("from build123d import *") && !cleanCode.includes("import build123d")) {
+      fullCode += "from build123d import *\n";
+    }
+    if (!cleanCode.includes("from backend.logoup3d import *") && !cleanCode.includes("import logoup3d")) {
+      fullCode += "from backend.logoup3d import *\n\n";
+    }
+    fullCode += cleanCode;
+    return fullCode.trim() + "\n";
   }
 
-  // 清洗空行并补全标准头部
-  const cleanCode = rawCode.trim();
-  if (!cleanCode || cleanCode === "# 🏁 开始 LogoUp 3D 造型") {
+  // ==================== build123d 模式 ====================
+  // 排除纯空的 logoup_start 积木
+  const meaningfulBlocks = allBlocks.filter(
+    (b) => b.isEnabled() && b.type !== "logoup_start"
+  );
+  if (meaningfulBlocks.length === 0) {
+    return "";
+  }
+
+  let rawCode = pythonGenerator.workspaceToCode(workspace);
+  // 严格移除 LogoUp 3D 专属开始标记注释与头部，杜绝 build123d 模式混入 LogoUp 注释
+  rawCode = rawCode
+    .replace(/^#\s*🏁\s*开始\s*LogoUp\s*3D\s*造型\s*\n?/gm, "")
+    .replace(/^from\s+backend\.logoup3d\s+import\s+\*\s*\n?/gm, "")
+    .trim();
+
+  if (!rawCode) {
     return "";
   }
 
   let fullCode = "";
-  const hasLogoUp = cleanCode.includes("draw()") ||
-    cleanCode.includes("extrude(") ||
-    cleanCode.includes("go(") ||
-    cleanCode.includes("rect(") ||
-    cleanCode.includes("square(") ||
-    cleanCode.includes("box(") ||
-    cleanCode.includes("cylinder(") ||
-    cleanCode.includes("sphere(") ||
-    cleanCode.includes("cone(") ||
-    cleanCode.includes("pyramid_solid(") ||
-    cleanCode.includes("torus(") ||
-    cleanCode.includes("polygon(") ||
-    cleanCode.includes("star(") ||
-    cleanCode.includes("five_star(") ||
-    cleanCode.includes("ellipse(") ||
-    cleanCode.includes("egg(") ||
-    cleanCode.includes("up(") ||
-    cleanCode.includes("width(") ||
-    cleanCode.includes("fill()") ||
-    cleanCode.includes("body()") ||
-    cleanCode.includes("reset()") ||
-    cleanCode.includes("push()") ||
-    cleanCode.includes("pop()") ||
-    cleanCode.includes("color(") ||
-    cleanCode.includes("yaw(") ||
-    cleanCode.includes("pitch(") ||
-    cleanCode.includes("roll(") ||
-    cleanCode.includes("move(") ||
-    cleanCode.includes("shift(") ||
-    cleanCode.includes("subtract(") ||
-    cleanCode.includes("txtstamp(") ||
-    cleanCode.includes("# 🏁 开始 LogoUp 3D");
-
-  if (!cleanCode.includes("from build123d import *") && !cleanCode.includes("import build123d")) {
-    fullCode += "from build123d import *\n";
+  if (!rawCode.includes("from build123d import *") && !rawCode.includes("import build123d")) {
+    fullCode += "from build123d import *\n\n";
   }
-
-  if (hasLogoUp && !cleanCode.includes("from backend.logoup3d import *") && !cleanCode.includes("import logoup3d")) {
-    fullCode += "from backend.logoup3d import *\n\n";
-  }
-  fullCode += cleanCode;
-  if (!fullCode.endsWith("\n")) {
-    fullCode += "\n";
-  }
-  return fullCode;
+  fullCode += rawCode;
+  return fullCode.trim() + "\n";
 }

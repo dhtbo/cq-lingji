@@ -1,12 +1,9 @@
 import { pythonGenerator, Order } from "blockly/python";
 
-let generatorRegistered = false;
-
 /**
  * 注册 LogoUp 3D 图形化积木的 Python 代码生成器
  */
 export function registerLogoUp3DGenerator() {
-  if (generatorRegistered) return;
 
   // ==========================================
   // 控制流程
@@ -462,7 +459,7 @@ export function registerLogoUp3DGenerator() {
   };
 
   pythonGenerator.forBlock["logoup_link"] = function () {
-    return "# 连接形状到当前草图 (LINK)\n";
+    return "link()\n";
   };
 
   pythonGenerator.forBlock["logoup_move"] = function (block) {
@@ -630,5 +627,10 @@ export function registerLogoUp3DGenerator() {
     return `cone(${r}, ${h})\n`;
   };
 
-  generatorRegistered = true;
+  pythonGenerator.forBlock["logoup_ellipsoid"] = function (block) {
+    const rx = block.getFieldValue("RX");
+    const ry = block.getFieldValue("RY");
+    const rz = block.getFieldValue("RZ");
+    return `ellipsoid(${rx}, ${ry}, ${rz})\n`;
+  };
 }

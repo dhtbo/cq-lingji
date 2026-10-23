@@ -2,7 +2,29 @@
  * 后端 API 交互客户端
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+/**
+ * 动态解析后端 API 基础路径
+ * 1. 优先使用环境变量 NEXT_PUBLIC_API_URL（如单独指定了外部 API 域名）
+ * 2. 浏览器客户端环境下：
+ *    - 默认返回空字符串 ""，即使用同源相对路径（例如 /api/v1/render/b3d）
+ *      由 Next.js rewrites 统一反向代理至宿主机 127.0.0.1:8000。
+ *      彻底解决局域网/跨网设备访问（如 192.168.0.118:3000）时连接自身 localhost 的缺陷，
+ *      同时免除了局域网内给 8000 端口额外配置防火墙与跨域预检。
+ * 3. 服务端渲染 (SSR) 或脱机环境下：回退到 http://127.0.0.1:8000
+ */
+export function getApiBase(): string {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, "");
+  }
+  if (typeof window !== "undefined") {
+    try {
+      const customUrl = localStorage.getItem("cad_backend_url");
+      if (customUrl) return customUrl.replace(/\/$/, "");
+    } catch {}
+    return "";
+  }
+  return "http://127.0.0.1:8000";
+}
 
 export interface StepInfo {
   step: number;
@@ -11,7 +33,7 @@ export interface StepInfo {
 }
 
 export interface RenderResult {
-  status: "success" | "error";
+  status: "success" | "pending_geometry" | "error";
   execution_time_ms: number;
   mesh: any;
   cursor_metadata?: any;
@@ -38,7 +60,7 @@ export async function renderBuild123dCode(
   code: string,
   options: RenderOptions = {}
 ): Promise<RenderResult> {
-  const response = await fetch(`${API_BASE}/api/v1/render/b3d`, {
+  const response = await fetch(`${getApiBase()}/api/v1/render/b3d`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -74,7 +96,7 @@ export async function downloadCadExport(
   files?: Record<string, string>,
   entrypoint?: string
 ): Promise<void> {
-  const endpoint = `${API_BASE}/api/v1/export/${format}`;
+  const endpoint = `${getApiBase()}/api/v1/export/${format}`;
   const defaultName = `cad_model_${Date.now()}.${format}`;
   const outName = filename || defaultName;
 
@@ -112,7 +134,7 @@ export async function downloadCadExport(
  */
 export async function checkBackendHealth(): Promise<boolean> {
   try {
-    const res = await fetch(`${API_BASE}/api/v1/health`, {
+    const res = await fetch(`${getApiBase()}/api/v1/health`, {
       method: "GET",
       signal: AbortSignal.timeout(3000),
     });
@@ -167,7 +189,7 @@ export async function analyzeCadPrintability(
   files?: Record<string, string>,
   entrypoint?: string
 ): Promise<PrintabilityReport> {
-  const response = await fetch(`${API_BASE}/api/v1/analyze/printability`, {
+  const response = await fetch(`${getApiBase()}/api/v1/analyze/printability`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -213,7 +235,7 @@ export async function previewModelAsset(
   color: string = "#10B981",
   tolerance: number = 0.01
 ): Promise<ModelPreviewResult> {
-  const response = await fetch(`${API_BASE}/api/v1/preview-model`, {
+  const response = await fetch(`${getApiBase()}/api/v1/preview-model`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

@@ -14,7 +14,7 @@ export interface ThemeToken {
   ringClass: string;
   activeTabClass: string;
   runGradient: string; // 运行按钮渐变
-  subtleBg: string; // 柔和半透明背景
+  subtleBg: string; // 柔和透明背景
   subtleBorder: string;
   glowShadow: string;
 }

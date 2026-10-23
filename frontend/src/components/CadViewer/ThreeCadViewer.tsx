@@ -39,7 +39,7 @@ import {
   Circle,
 } from "lucide-react";
 import { StepInfo } from "@/lib/api";
-import { updateLogoUpOverlay } from "./logoupOverlay";
+import { updateLogoUpOverlay, updateCursorAdaptiveScale } from "./logoupOverlay";
 
 export interface PickedElements {
   pickTab: "face" | "edge" | "vertex";
@@ -214,11 +214,15 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
     "select" | "sketch" | "add" | "extrude" | "hole" | "fillet" | "chamfer" | "shell"
   >("select");
 
-  // 3D 视口多图层独立实时显示控制 (游标 · 基准平面 · 2D草图 · 3D实体模型)
+  // 3D 视口多图层独立实时显示控制 (游标 · 基准平面 · 2D草图 · 3D实体模型 · 透明)
   const [showCursorLayer, setShowCursorLayer] = useState(true);
+  const [cursorScale, setCursorScale] = useState(1.0);
+  const cursorScaleRef = useRef(cursorScale);
+  cursorScaleRef.current = cursorScale;
   const [showPlaneLayer, setShowPlaneLayer] = useState(true);
   const [showSketchLayer, setShowSketchLayer] = useState(true);
   const [showModelLayer, setShowModelLayer] = useState(true);
+  const [isTransparent, setIsTransparent] = useState(false);
 
   // 鼠标平面交互绘制草图状态 (圆形 / 矩形 / 多边形区域)
   const [sketchShape, setSketchShape] = useState<"circle" | "rect" | "polygon">("circle");
@@ -282,7 +286,7 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
   const triggerCopyToast = (tag: string, text: string) => {
     try {
       navigator.clipboard?.writeText(text);
-    } catch {}
+    } catch { }
     setCopiedAction(tag);
     showToast(text);
     setTimeout(() => setCopiedAction(null), 1800);
@@ -347,7 +351,7 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
     };
   };
 
-  // 多图层显隐响应逻辑 (基准平面 · 2D草图 · 3D模型)
+  // 多图层显隐响应与透明渲染逻辑 (基准平面 · 2D草图 · 3D实体模型 · 透明)
   useEffect(() => {
     const viewer = displayRef.current?.viewer;
     const scene = viewer?.rendered?.scene;
@@ -356,17 +360,30 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
         const name = (child.name || "").toLowerCase();
         if (name.includes("sketch")) {
           child.visible = showSketchLayer;
-        } else if (name.includes("model")) {
+        } else if (name.includes("model") || (child.isMesh && !name.includes("logoup"))) {
           child.visible = showModelLayer;
+          if (child.material) {
+            const mats = Array.isArray(child.material) ? child.material : [child.material];
+            mats.forEach((m: THREE.Material) => {
+              m.transparent = isTransparent;
+              m.opacity = isTransparent ? 0.45 : 1.0;
+              m.needsUpdate = true;
+            });
+          }
         }
       });
+      const camera = viewer.rendered?.camera?.camera || viewer.rendered?.camera;
+      const renderer = viewer.rendered?.renderer;
+      if (renderer && camera) {
+        renderer.render(scene, camera);
+      }
     }
     if (displayRef.current?.setGrid) {
       try {
         displayRef.current.setGrid("grid", showPlaneLayer);
-      } catch {}
+      } catch { }
     }
-  }, [showPlaneLayer, showSketchLayer, showModelLayer]);
+  }, [showPlaneLayer, showSketchLayer, showModelLayer, isTransparent]);
 
   // 鼠标草图交互事件处理
   const handleSketchPointerDown = (e: React.PointerEvent) => {
@@ -492,7 +509,7 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
         displayInstance = new Display(containerRef.current, {
           cadWidth: width,
           height: height,
-          treeWidth: 0,
+          treeWidth: 260,
           theme: theme,
           tools: true,
           pinning: false,
@@ -505,6 +522,13 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
           studioTool: false,
           externalMeasurementBackend: false,
         });
+
+        // 默认收起工具面板与拓扑树，由外部状态按需唤起浮动展示
+        try {
+          if (typeof displayInstance.showToolsPanel === "function") {
+            displayInstance.showToolsPanel(false);
+          }
+        } catch { }
 
         // 外部状态通知监听
         const notifyCallback = (changes: any) => {
@@ -526,6 +550,9 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
         );
 
         displayRef.current = displayInstance;
+        if (typeof window !== "undefined") {
+          (window as any).__cadViewerDisplay = displayInstance;
+        }
 
         if (meshData && displayInstance.viewer) {
           renderMesh(displayInstance, meshData);
@@ -537,16 +564,25 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
 
     initViewer();
 
-    // 响应式画布缩放
+    // 响应式画布缩放 (精确计算可用高度，消除底部截断，保证左下角坐标轴完整呈现)
     const resizeObserver = new ResizeObserver((entries) => {
       if (!displayRef.current || !entries[0]) return;
       const { width, height } = entries[0].contentRect;
       if (width > 50 && height > 50) {
         try {
-          displayRef.current.setSizes({
-            cadWidth: Math.floor(width),
-            height: Math.floor(height),
-          });
+          const w = Math.floor(width);
+          const toolbarEl = containerRef.current?.querySelector(".tcv_cad_toolbar") as HTMLElement | null;
+          const toolbarH = toolbarEl && toolbarEl.offsetHeight > 0 ? toolbarEl.offsetHeight : 0;
+          // 精确减去上方 toolbar 实际占用高度，并预留 12px 底部安全呼吸边距，保证左下角坐标轴 100% 完整露显且无像素溢出！
+          const availableH = Math.max(50, Math.floor(height) - toolbarH - 12);
+          if (displayRef.current.viewer && typeof displayRef.current.viewer.resizeCadView === "function") {
+            displayRef.current.viewer.resizeCadView(w, 260, availableH, true);
+          } else if (typeof displayRef.current.setSizes === "function") {
+            displayRef.current.setSizes({
+              cadWidth: w,
+              height: availableH,
+            });
+          }
         } catch {
           // ignore layout transition
         }
@@ -868,7 +904,7 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
       const renderOptions = {
         edgeColor: 0x111827,
         defaultColor: "#3b82f6",
-        defaultOpacity: 1.0,
+        defaultOpacity: isTransparent ? 0.45 : 1.0,
         blackEdges: blackEdges,
         normalLen: 0,
       };
@@ -878,7 +914,7 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
         grid: [showGrid, false, false],
         axes: showAxes,
         axes0: showAxes,
-        transparent: false,
+        transparent: isTransparent,
         blackEdges: blackEdges,
         theme: theme,
       };
@@ -888,30 +924,144 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
         display.viewer.render(data, renderOptions, viewerOptions);
       }
 
-      // 挂载 / 刷新 LogoUp 专属视口图层 (三维游标、方向指示箭头、草图平面、未填充线框)
+      // 确保所有 2D 草图与实体正背面均呈现一致的真实材质颜色，消除背面蓝灰色覆盖正面橙色的缺陷
       const scene = display.viewer.rendered?.scene;
       const camera = display.viewer.rendered?.camera?.camera || display.viewer.rendered?.camera;
       const renderer = display.viewer.rendered?.renderer;
       if (scene) {
-        updateLogoUpOverlay(scene, data.cursor_metadata || null, {
-          showCursor: showCursorLayer,
-          showPlane: showPlaneLayer,
-          showSketch: showSketchLayer,
+        scene.traverse((child: any) => {
+          if (child.isGroup && Array.isArray(child.children) && child.children.length >= 2) {
+            const frontMesh = child.children.find(
+              (c: any) => c.isMesh && c.material && c.material.side === THREE.FrontSide
+            );
+            const backMesh = child.children.find(
+              (c: any) => c.isMesh && c.material && c.material.side === THREE.BackSide
+            );
+            if (frontMesh && backMesh && frontMesh.material?.color && backMesh.material?.color) {
+              backMesh.material.color.copy(frontMesh.material.color);
+              backMesh.material.needsUpdate = true;
+            }
+          }
         });
+        updateLogoUpOverlay(
+          scene,
+          data.cursor_metadata || null,
+          {
+            showCursor: showCursorLayer,
+            showPlane: showPlaneLayer,
+            showSketch: showSketchLayer,
+            cursorScale: cursorScale,
+          },
+          camera
+        );
         if (renderer && camera) {
           renderer.render(scene, camera);
         }
       }
 
-      // 视口居中聚焦保证
+      // 视口居中聚焦保证与全景自动适应缩放 (Zoom to fit)
       setTimeout(() => {
-        if (typeof display.setView === "function") {
-          display.setView("iso", true);
-        } else if (typeof display.viewer?.presetCamera === "function") {
-          display.viewer.presetCamera("iso");
-          display.viewer.reset();
+        try {
+          // 1. 如果支持，先设置等轴测预设方位角
+          if (typeof display.viewer?.presetCamera === "function") {
+            display.viewer.presetCamera("iso");
+          }
+
+          // 2. 自适应计算所有可见物体 (包含 3D 实体与 LogoUp 覆盖层) 的边界框并智能聚焦
+          const scene = display.viewer?.rendered?.scene;
+          const camera = display.viewer?.rendered?.camera?.camera || display.viewer?.rendered?.camera;
+          const controls = display.viewer?.rendered?.controls;
+
+          if (scene && camera && controls) {
+            // 绑定 controls change 监听，保证滚轮缩放、右键平移时游标保持恒定屏幕大小
+            const onControlsChange = () => {
+              const s = display.viewer?.rendered?.scene;
+              const c = display.viewer?.rendered?.camera?.camera || display.viewer?.rendered?.camera;
+              if (!s || !c) return;
+              const cur = s.getObjectByName("logoup_cursor") as THREE.Group | undefined;
+              if (cur) {
+                updateCursorAdaptiveScale(cur, c, cursorScaleRef.current);
+              }
+            };
+
+            if (!(controls as any).__cursorScaleListenerAttached) {
+              (controls as any).__cursorScaleListenerAttached = true;
+              if (typeof controls.addChangeListener === "function") {
+                controls.addChangeListener(onControlsChange);
+              }
+              const orbit = controls.getOrbitControls?.();
+              if (orbit && typeof orbit.addEventListener === "function") {
+                orbit.addEventListener("change", onControlsChange);
+              }
+              const trackball = controls.getTrackballControls?.();
+              if (trackball && typeof trackball.addEventListener === "function") {
+                trackball.addEventListener("change", onControlsChange);
+              }
+            }
+
+            const bbox = new THREE.Box3();
+            scene.traverse((obj: any) => {
+              if (obj.isMesh || obj.isLine || obj.isLineSegments) {
+                if (obj.visible && obj.geometry) {
+                  if (!obj.geometry.boundingBox) {
+                    obj.geometry.computeBoundingBox?.();
+                  }
+                  if (obj.geometry.boundingBox) {
+                    const objBox = obj.geometry.boundingBox.clone().applyMatrix4(obj.matrixWorld);
+                    bbox.union(objBox);
+                  }
+                }
+              }
+            });
+
+            if (!bbox.isEmpty()) {
+              const center = new THREE.Vector3();
+              bbox.getCenter(center);
+              const size = new THREE.Vector3();
+              bbox.getSize(size);
+              const maxDim = Math.max(size.x, size.y, size.z, 20.0);
+
+              controls.target.copy(center);
+
+              if ((camera as any).isPerspectiveCamera) {
+                const pCam = camera as THREE.PerspectiveCamera;
+                const fov = pCam.fov * (Math.PI / 180);
+                const cameraDist = Math.abs(maxDim / 2 / Math.tan(fov / 2)) * 1.5;
+                const dir = new THREE.Vector3(1, -1, 1).normalize();
+                pCam.position.copy(center).add(dir.multiplyScalar(cameraDist));
+                pCam.near = Math.max(0.1, cameraDist / 100);
+                pCam.far = Math.max(2000, cameraDist * 100);
+                pCam.updateProjectionMatrix();
+              } else if ((camera as any).isOrthographicCamera) {
+                const oCam = camera as THREE.OrthographicCamera;
+                const zoom = Math.min(
+                  (oCam.right - oCam.left) / (maxDim * 1.5),
+                  (oCam.top - oCam.bottom) / (maxDim * 1.5)
+                );
+                oCam.zoom = Math.max(0.2, zoom);
+                const dir = new THREE.Vector3(1, -1, 1).normalize();
+                oCam.position.copy(center).add(dir.multiplyScalar(maxDim * 2));
+                oCam.updateProjectionMatrix();
+              }
+              controls.update?.();
+              const cur = scene.getObjectByName("logoup_cursor") as THREE.Group | undefined;
+              if (cur && camera) {
+                updateCursorAdaptiveScale(cur, camera, cursorScaleRef.current);
+              }
+              display.viewer.rendered?.renderer?.render(scene, camera);
+            }
+          } else {
+            if (typeof display.viewer?.centerVisibleObjects === "function") {
+              display.viewer.centerVisibleObjects(true);
+            }
+            if (typeof display.viewer?.recenterCamera === "function") {
+              display.viewer.recenterCamera(true);
+            }
+          }
+        } catch (e) {
+          console.debug("自适应缩放微调失败:", e);
         }
-      }, 50);
+      }, 80);
     } catch (e) {
       console.error("渲染 CadQuery 网格失败:", e);
     }
@@ -935,24 +1085,30 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
     }
   }, [meshData]);
 
-  // 当游标、基准面、草图显隐图层切换时，实时重绘 LogoUp 覆盖层
+  // 当游标、基准面、草图显隐图层或游标大小切换时，实时重绘 LogoUp 覆盖层
   useEffect(() => {
     if (displayRef.current?.viewer && meshData) {
       const scene = displayRef.current.viewer.rendered?.scene;
       const camera = displayRef.current.viewer.rendered?.camera?.camera || displayRef.current.viewer.rendered?.camera;
       const renderer = displayRef.current.viewer.rendered?.renderer;
       if (scene) {
-        updateLogoUpOverlay(scene, meshData.cursor_metadata || null, {
-          showCursor: showCursorLayer,
-          showPlane: showPlaneLayer,
-          showSketch: showSketchLayer,
-        });
+        updateLogoUpOverlay(
+          scene,
+          meshData.cursor_metadata || null,
+          {
+            showCursor: showCursorLayer,
+            showPlane: showPlaneLayer,
+            showSketch: showSketchLayer,
+            cursorScale: cursorScale,
+          },
+          camera
+        );
         if (renderer && camera) {
           renderer.render(scene, camera);
         }
       }
     }
-  }, [showCursorLayer, showPlaneLayer, showSketchLayer]);
+  }, [showCursorLayer, showPlaneLayer, showSketchLayer, cursorScale]);
 
   // 时间旅行自动播放循环
   useEffect(() => {
@@ -1047,15 +1203,28 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
 
   // 展开 / 收起结构树
   const toggleTreeSidebar = () => {
-    setShowTree((prev) => !prev);
-    setTimeout(() => {
-      if (displayRef.current && containerRef.current) {
-        displayRef.current.setSizes({
-          cadWidth: containerRef.current.clientWidth,
-          height: containerRef.current.clientHeight,
-        });
-      }
-    }, 100);
+    setShowTree((prev) => {
+      const next = !prev;
+      setTimeout(() => {
+        if (displayRef.current) {
+          try {
+            if (typeof displayRef.current.showToolsPanel === "function") {
+              displayRef.current.showToolsPanel(next);
+            }
+            if (typeof displayRef.current.setSizes === "function" && containerRef.current) {
+              displayRef.current.setSizes({
+                cadWidth: containerRef.current.clientWidth,
+                height: containerRef.current.clientHeight,
+                treeWidth: next ? 260 : 0,
+              });
+            }
+          } catch (e) {
+            console.error("切换拓扑树失败:", e);
+          }
+        }
+      }, 50);
+      return next;
+    });
   };
 
   // 1. 添加立方体
@@ -1370,11 +1539,10 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
     <div className={`relative w-full h-full flex flex-col ${theme === "light" ? "bg-[#f0f2f5]" : "bg-[#0d1117]"} overflow-hidden select-none`}>
       {/* 顶部标题与整合式视口工具栏 (彻底消除视口内部遮挡) */}
       <div
-        className={`h-9 px-3 flex items-center justify-between ${
-          theme === "light"
+        className={`h-9 px-3 flex items-center justify-between ${theme === "light"
             ? "bg-white border-b border-[#e5e7eb] text-gray-800"
             : "bg-[#161b22] border-b border-[#30363d] text-gray-300"
-        } text-xs font-semibold z-10`}
+          } text-xs font-semibold z-10`}
       >
         <div className="flex items-center space-x-2 flex-shrink-0">
           <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
@@ -1384,125 +1552,106 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
           </span>
         </div>
 
-        {/* 3D 视图图层实时显示控制：游标 · 基准平面 · 2D草图 · 3D模型 */}
+        {/* 3D 视图图层与渲染属性复选框：游标 · 平面 · 草图 · 模型 · 透明 */}
         <div
-          className={`flex items-center ${
-            theme === "light" ? "bg-[#f3f4f6] border-[#e5e7eb]" : "bg-[#21262d] border-[#30363d]"
-          } rounded-lg p-0.5 border text-[11px]`}
+          className={`flex items-center gap-1.5 sm:gap-2 ${theme === "light" ? "bg-[#f3f4f6] border-[#e5e7eb]" : "bg-[#21262d] border-[#30363d]"
+            } rounded-lg px-2 py-1 border text-[11px]`}
         >
-          <button
-            onClick={() => setShowCursorLayer(!showCursorLayer)}
-            title={showCursorLayer ? "点击隐藏三维游标与方向指示" : "点击显示三维游标与方向指示"}
-            className={`px-1.5 py-0.5 rounded font-medium transition flex items-center gap-1 ${
-              showCursorLayer
-                ? "bg-teal-600 text-white shadow-sm font-semibold"
-                : theme === "light"
-                ? "text-gray-500 hover:text-gray-800"
-                : "text-gray-500 hover:text-gray-300"
-            }`}
-          >
-            <span>🧭 游标</span>
-          </button>
-          <button
-            onClick={() => setShowPlaneLayer(!showPlaneLayer)}
-            title={showPlaneLayer ? "点击隐藏基准平面网格" : "点击显示基准平面网格"}
-            className={`px-1.5 py-0.5 rounded font-medium transition flex items-center gap-1 ${
-              showPlaneLayer
-                ? "bg-purple-600 text-white shadow-sm font-semibold"
-                : theme === "light"
-                ? "text-gray-500 hover:text-gray-800"
-                : "text-gray-500 hover:text-gray-300"
-            }`}
-          >
-            <span>📐 平面</span>
-          </button>
-          <button
-            onClick={() => setShowSketchLayer(!showSketchLayer)}
-            title={showSketchLayer ? "点击隐藏 2D 草图线" : "点击显示 2D 草图线"}
-            className={`px-1.5 py-0.5 rounded font-medium transition flex items-center gap-1 ${
-              showSketchLayer
-                ? "bg-amber-600 text-white shadow-sm"
-                : theme === "light"
-                ? "text-gray-500 hover:text-gray-800"
-                : "text-gray-500 hover:text-gray-300"
-            }`}
-          >
-            <span>✏️ 草图</span>
-          </button>
-          <button
-            onClick={() => setShowModelLayer(!showModelLayer)}
-            title={showModelLayer ? "点击隐藏 3D 实体模型" : "点击显示 3D 实体模型"}
-            className={`px-1.5 py-0.5 rounded font-medium transition flex items-center gap-1 ${
-              showModelLayer
-                ? "bg-blue-600 text-white shadow-sm"
-                : theme === "light"
-                ? "text-gray-500 hover:text-gray-800"
-                : "text-gray-500 hover:text-gray-300"
-            }`}
-          >
-            <span>📦 模型</span>
-          </button>
-        </div>
-
-        {/* 视口核心相机与显示模式控制组 (集成于顶部 Header，0 视口遮挡) */}
-        <div className="flex items-center space-x-1.5">
-          {/* 相机视角切换组 */}
-          <div
-            className={`flex items-center ${
-              theme === "light" ? "bg-[#f3f4f6] border-[#e5e7eb]" : "bg-[#21262d] border-[#30363d]"
-            } rounded-lg p-0.5 border`}
-          >
-            <button
-              onClick={() => handlePresetCamera("iso")}
-              title="等轴测视角 (Isometric)"
-              className={`px-1.5 py-0.5 ${
-                theme === "light" ? "hover:bg-white text-gray-700" : "hover:bg-[#30363d] text-gray-200"
-              } rounded text-[11px] font-medium transition`}
-            >
-              Iso
-            </button>
-            <button
-              onClick={() => handlePresetCamera("top")}
-              title="顶视 (Top)"
-              className={`px-1.5 py-0.5 ${
-                theme === "light" ? "hover:bg-white text-gray-700" : "hover:bg-[#30363d] text-gray-200"
-              } rounded text-[11px] font-medium transition`}
-            >
-              Top
-            </button>
-            <button
-              onClick={() => handlePresetCamera("front")}
-              title="正视 (Front)"
-              className={`px-1.5 py-0.5 ${
-                theme === "light" ? "hover:bg-white text-gray-700" : "hover:bg-[#30363d] text-gray-200"
-              } rounded text-[11px] font-medium transition`}
-            >
-              Front
-            </button>
-            <button
-              onClick={() => handlePresetCamera("right")}
-              title="右侧视 (Right)"
-              className={`px-1.5 py-0.5 ${
-                theme === "light" ? "hover:bg-white text-gray-700" : "hover:bg-[#30363d] text-gray-200"
-              } rounded text-[11px] font-medium transition`}
-            >
-              Right
-            </button>
+          {/* 1. 游标复选框 + 尺寸步进调节 */}
+          <div className="flex items-center gap-1">
+            <label className="flex items-center gap-1 cursor-pointer select-none text-gray-700 dark:text-gray-300 hover:text-teal-400 transition">
+              <input
+                type="checkbox"
+                checked={showCursorLayer}
+                onChange={(e) => setShowCursorLayer(e.target.checked)}
+                className="w-3.5 h-3.5 rounded border-gray-400 text-teal-600 focus:ring-0 cursor-pointer accent-teal-600"
+              />
+              <span className="font-medium">游标</span>
+            </label>
+            {showCursorLayer && (
+              <div
+                className={`flex items-center gap-0.5 ml-0.5 rounded px-1 py-0.2 ${theme === "light" ? "bg-gray-200/80 text-gray-700" : "bg-[#161b22] text-gray-300"
+                  } border border-black/10 dark:border-white/10`}
+              >
+                <button
+                  onClick={() => setCursorScale((s) => Math.max(0.4, Number((s - 0.2).toFixed(1))))}
+                  className="px-0.5 text-gray-400 hover:text-teal-400 font-bold leading-none"
+                  title="缩小游标"
+                >
+                  -
+                </button>
+                <span className="font-mono text-[10px] w-5 text-center leading-none" title="游标屏幕尺寸倍率">
+                  {cursorScale.toFixed(1)}x
+                </span>
+                <button
+                  onClick={() => setCursorScale((s) => Math.min(3.0, Number((s + 0.2).toFixed(1))))}
+                  className="px-0.5 text-gray-400 hover:text-teal-400 font-bold leading-none"
+                  title="放大游标"
+                >
+                  +
+                </button>
+              </div>
+            )}
           </div>
 
-          <span className={`w-px h-3.5 ${theme === "light" ? "bg-[#e5e7eb]" : "bg-[#30363d]"}`}></span>
+          {/* 2. 平面复选框 */}
+          <label className="flex items-center gap-1 cursor-pointer select-none text-gray-700 dark:text-gray-300 hover:text-purple-400 transition">
+            <input
+              type="checkbox"
+              checked={showPlaneLayer}
+              onChange={(e) => setShowPlaneLayer(e.target.checked)}
+              className="w-3.5 h-3.5 rounded border-gray-400 text-purple-600 focus:ring-0 cursor-pointer accent-purple-600"
+            />
+            <span className="font-medium">平面</span>
+          </label>
+
+          {/* 3. 草图复选框 */}
+          <label className="flex items-center gap-1 cursor-pointer select-none text-gray-700 dark:text-gray-300 hover:text-amber-400 transition">
+            <input
+              type="checkbox"
+              checked={showSketchLayer}
+              onChange={(e) => setShowSketchLayer(e.target.checked)}
+              className="w-3.5 h-3.5 rounded border-gray-400 text-amber-600 focus:ring-0 cursor-pointer accent-amber-600"
+            />
+            <span className="font-medium">草图</span>
+          </label>
+
+          {/* 4. 模型复选框 */}
+          <label className="flex items-center gap-1 cursor-pointer select-none text-gray-700 dark:text-gray-300 hover:text-blue-400 transition">
+            <input
+              type="checkbox"
+              checked={showModelLayer}
+              onChange={(e) => setShowModelLayer(e.target.checked)}
+              className="w-3.5 h-3.5 rounded border-gray-400 text-blue-600 focus:ring-0 cursor-pointer accent-blue-600"
+            />
+            <span className="font-medium">模型</span>
+          </label>
+
+          {/* 5. 透明复选框 */}
+          <label className="flex items-center gap-1 cursor-pointer select-none text-gray-700 dark:text-gray-300 hover:text-cyan-400 transition">
+            <input
+              type="checkbox"
+              checked={isTransparent}
+              onChange={(e) => setIsTransparent(e.target.checked)}
+              className="w-3.5 h-3.5 rounded border-gray-400 text-cyan-600 focus:ring-0 cursor-pointer accent-cyan-600"
+            />
+            <span className="font-medium">透明</span>
+          </label>
+        </div>
+
+        {/* 视口核心显示模式控制组 (集成于顶部 Header，0 视口遮挡) */}
+        <div className="flex items-center space-x-1.5">
 
           {/* 正交/透视 */}
           <button
             onClick={toggleOrtho}
             title={isOrtho ? "切换为透视投影" : "切换为工程正交投影"}
-            className={`p-1 rounded transition ${
-              isOrtho
+            className={`p-1 rounded transition ${isOrtho
                 ? "bg-blue-600 text-white"
                 : theme === "light"
-                ? "text-gray-600 hover:text-gray-900 hover:bg-[#f3f4f6]"
-                : "text-gray-400 hover:text-white hover:bg-[#21262d]"
-            }`}
+                  ? "text-gray-600 hover:text-gray-900 hover:bg-[#f3f4f6]"
+                  : "text-gray-400 hover:text-white hover:bg-[#21262d]"
+              }`}
           >
             <Compass size={13} />
           </button>
@@ -1511,13 +1660,12 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
           <button
             onClick={toggleGrid}
             title={showGrid ? "隐藏网格" : "显示网格"}
-            className={`p-1 rounded transition ${
-              showGrid
+            className={`p-1 rounded transition ${showGrid
                 ? "text-blue-500 bg-blue-500/10"
                 : theme === "light"
-                ? "text-gray-500 hover:text-gray-900 hover:bg-[#f3f4f6]"
-                : "text-gray-500 hover:text-white hover:bg-[#21262d]"
-            }`}
+                  ? "text-gray-500 hover:text-gray-900 hover:bg-[#f3f4f6]"
+                  : "text-gray-500 hover:text-white hover:bg-[#21262d]"
+              }`}
           >
             <Grid3X3 size={13} />
           </button>
@@ -1526,13 +1674,12 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
           <button
             onClick={toggleBlackEdges}
             title={blackEdges ? "隐藏拓扑黑边" : "显示拓扑黑边"}
-            className={`p-1 rounded transition ${
-              blackEdges
+            className={`p-1 rounded transition ${blackEdges
                 ? "text-emerald-500 bg-emerald-500/10"
                 : theme === "light"
-                ? "text-gray-500 hover:text-gray-900 hover:bg-[#f3f4f6]"
-                : "text-gray-500 hover:text-white hover:bg-[#21262d]"
-            }`}
+                  ? "text-gray-500 hover:text-gray-900 hover:bg-[#f3f4f6]"
+                  : "text-gray-500 hover:text-white hover:bg-[#21262d]"
+              }`}
           >
             <Layers size={13} />
           </button>
@@ -1541,11 +1688,10 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
           <button
             onClick={handleResetCamera}
             title="居中重置视角"
-            className={`p-1 ${
-              theme === "light"
+            className={`p-1 ${theme === "light"
                 ? "text-gray-600 hover:text-gray-900 hover:bg-[#f3f4f6]"
                 : "text-gray-400 hover:text-white hover:bg-[#21262d]"
-            } rounded transition`}
+              } rounded transition`}
           >
             <RotateCcw size={13} />
           </button>
@@ -1554,11 +1700,10 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
           <button
             onClick={toggleTheme}
             title="明暗底色切换"
-            className={`p-1 ${
-              theme === "light"
+            className={`p-1 ${theme === "light"
                 ? "text-gray-600 hover:text-gray-900 hover:bg-[#f3f4f6]"
                 : "text-gray-400 hover:text-white hover:bg-[#21262d]"
-            } rounded transition`}
+              } rounded transition`}
           >
             {theme === "dark" ? <Sun size={13} /> : <Moon size={13} />}
           </button>
@@ -1567,13 +1712,12 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
           <button
             onClick={toggleTreeSidebar}
             title={showTree ? "收起结构树" : "展开拓扑结构树"}
-            className={`p-1 rounded transition ${
-              showTree
+            className={`p-1 rounded transition ${showTree
                 ? "text-indigo-500 bg-indigo-500/10"
                 : theme === "light"
-                ? "text-gray-500 hover:text-gray-900 hover:bg-[#f3f4f6]"
-                : "text-gray-500 hover:text-white hover:bg-[#21262d]"
-            }`}
+                  ? "text-gray-500 hover:text-gray-900 hover:bg-[#f3f4f6]"
+                  : "text-gray-500 hover:text-white hover:bg-[#21262d]"
+              }`}
           >
             <FolderTree size={13} />
           </button>
@@ -1582,7 +1726,7 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
 
       {/* 3D Viewport 画布区 (无顶栏遮挡，three-cad-viewer 原生工具完全露显) */}
       <div
-        className="relative flex-1 w-full h-full overflow-hidden"
+        className="relative flex-1 min-h-0 w-full overflow-hidden"
         onContextMenu={handleContextMenu}
         onClick={handleViewportClick}
         onMouseEnter={() => {
@@ -1595,9 +1739,8 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
         {/* three-cad-viewer 容器 */}
         <div
           ref={containerRef}
-          className={`w-full h-full cad-viewer-container cursor-crosshair ${showTree ? "show-tree" : ""} ${
-            theme === "light" ? "bg-[#f0f2f5]" : "bg-[#090d13]"
-          }`}
+          className={`w-full h-full cad-viewer-container cursor-crosshair ${showTree ? "show-tree" : ""} ${theme === "light" ? "bg-[#f0f2f5]" : "bg-[#090d13]"
+            }`}
         />
 
         {/* 草图交互全屏绘制层与 SVG 动态尺寸投影标注 */}
@@ -1798,9 +1941,8 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
                   setSketchShape("circle");
                   setPolygonPoints([]);
                 }}
-                className={`px-2.5 py-1 rounded-md transition flex items-center gap-1 ${
-                  sketchShape === "circle" ? "bg-amber-600 text-white shadow font-semibold" : "text-gray-400 hover:text-white"
-                }`}
+                className={`px-2.5 py-1 rounded-md transition flex items-center gap-1 ${sketchShape === "circle" ? "bg-amber-600 text-white shadow font-semibold" : "text-gray-400 hover:text-white"
+                  }`}
               >
                 <Circle size={12} />
                 <span>圆</span>
@@ -1810,18 +1952,16 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
                   setSketchShape("rect");
                   setPolygonPoints([]);
                 }}
-                className={`px-2.5 py-1 rounded-md transition flex items-center gap-1 ${
-                  sketchShape === "rect" ? "bg-blue-600 text-white shadow font-semibold" : "text-gray-400 hover:text-white"
-                }`}
+                className={`px-2.5 py-1 rounded-md transition flex items-center gap-1 ${sketchShape === "rect" ? "bg-blue-600 text-white shadow font-semibold" : "text-gray-400 hover:text-white"
+                  }`}
               >
                 <Square size={12} />
                 <span>矩形</span>
               </button>
               <button
                 onClick={() => setSketchShape("polygon")}
-                className={`px-2.5 py-1 rounded-md transition flex items-center gap-1 ${
-                  sketchShape === "polygon" ? "bg-emerald-600 text-white shadow font-semibold" : "text-gray-400 hover:text-white"
-                }`}
+                className={`px-2.5 py-1 rounded-md transition flex items-center gap-1 ${sketchShape === "polygon" ? "bg-emerald-600 text-white shadow font-semibold" : "text-gray-400 hover:text-white"
+                  }`}
               >
                 <Spline size={12} />
                 <span>多边形折线</span>
@@ -1874,25 +2014,21 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
               ? { left: `${toolbarPos.x}px`, top: `${toolbarPos.y}px`, position: "fixed" }
               : undefined
           }
-          className={`${
-            !toolbarPos ? "absolute top-14 left-3" : ""
-          } z-20 flex flex-col items-center ${
-            theme === "light"
+          className={`${!toolbarPos ? "absolute top-14 left-3" : ""
+            } z-20 flex flex-col items-center ${theme === "light"
               ? "bg-white/95 border-[#d0d7de] text-gray-800"
               : "bg-[#161b22]/95 border-[#30363d] text-gray-200"
-          } backdrop-blur-md border shadow-2xl rounded-xl text-xs select-none animate-in fade-in slide-in-from-left-2 duration-150 ring-1 ring-black/5`}
+            } backdrop-blur-md border shadow-2xl rounded-xl text-xs select-none animate-in fade-in slide-in-from-left-2 duration-150 ring-1 ring-black/5`}
         >
           {/* 顶部拖动手柄与折叠切换 */}
           <div
-            className={`w-full flex items-center justify-between p-1 ${
-              theme === "light" ? "bg-[#f3f4f6] border-b border-[#e5e7eb]" : "bg-[#21262d] border-b border-[#30363d]"
-            } rounded-t-xl cursor-move`}
+            className={`w-full flex items-center justify-between p-1 ${theme === "light" ? "bg-[#f3f4f6] border-b border-[#e5e7eb]" : "bg-[#21262d] border-b border-[#30363d]"
+              } rounded-t-xl cursor-move`}
           >
             <div
               onPointerDown={startDragToolbar}
-              className={`p-1 ${
-                theme === "light" ? "text-gray-500 hover:text-amber-600" : "text-gray-400 hover:text-amber-400"
-              } transition`}
+              className={`p-1 ${theme === "light" ? "text-gray-500 hover:text-amber-600" : "text-gray-400 hover:text-amber-400"
+                } transition`}
               title="按住可拖动工具栏位置"
             >
               <GripVertical size={13} />
@@ -1900,11 +2036,10 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
             <button
               onClick={() => setIsToolbarCollapsed(!isToolbarCollapsed)}
               title={isToolbarCollapsed ? "展开 3D 工具箱" : "折叠隐藏 3D 工具箱"}
-              className={`p-1 ${
-                theme === "light"
+              className={`p-1 ${theme === "light"
                   ? "text-gray-500 hover:text-gray-800 hover:bg-gray-200"
                   : "text-gray-400 hover:text-white hover:bg-[#30363d]"
-              } rounded transition`}
+                } rounded transition`}
             >
               {isToolbarCollapsed ? <ChevronRight size={13} /> : <ChevronLeft size={13} />}
             </button>
@@ -1933,13 +2068,12 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
                   setPolygonPoints([]);
                 }}
                 title={`拾取工具 (当前: ${pickTab === "face" ? "面 [3]" : pickTab === "edge" ? "线 [2]" : "点 [1]"})`}
-                className={`p-2 rounded-lg transition ${
-                  activeTool === "select"
+                className={`p-2 rounded-lg transition ${activeTool === "select"
                     ? "bg-blue-600 text-white shadow-sm"
                     : theme === "light"
-                    ? "text-gray-600 hover:text-gray-950 hover:bg-gray-100"
-                    : "text-gray-400 hover:text-white hover:bg-[#21262d]"
-                }`}
+                      ? "text-gray-600 hover:text-gray-950 hover:bg-gray-100"
+                      : "text-gray-400 hover:text-white hover:bg-[#21262d]"
+                  }`}
               >
                 <MousePointer size={15} />
               </button>
@@ -1959,13 +2093,12 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
                   }
                 }}
                 title={activeTool === "sketch" ? "退出草图绘制模式" : "平面草图交互绘制 (圆/矩形/多边形)"}
-                className={`p-2 rounded-lg transition ${
-                  activeTool === "sketch"
+                className={`p-2 rounded-lg transition ${activeTool === "sketch"
                     ? "bg-amber-600 text-white shadow-sm ring-2 ring-amber-400/40"
                     : theme === "light"
-                    ? "text-gray-600 hover:text-gray-950 hover:bg-gray-100"
-                    : "text-gray-400 hover:text-white hover:bg-[#21262d]"
-                }`}
+                      ? "text-gray-600 hover:text-gray-950 hover:bg-gray-100"
+                      : "text-gray-400 hover:text-white hover:bg-[#21262d]"
+                  }`}
               >
                 <Pencil size={15} />
               </button>
@@ -1979,11 +2112,10 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
                   setIsContextMenuOpen(false);
                 }}
                 title="添加基本体 (Shift + A)"
-                className={`p-2 rounded-lg ${
-                  theme === "light"
+                className={`p-2 rounded-lg ${theme === "light"
                     ? "text-gray-600 hover:text-gray-950 hover:bg-gray-100"
                     : "text-gray-400 hover:text-white hover:bg-[#21262d]"
-                } transition`}
+                  } transition`}
               >
                 <Plus size={15} />
               </button>
@@ -1999,11 +2131,10 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
                   triggerCopyToast("extrude", "已执行表面拉伸 (10mm)");
                 }}
                 title="表面拉伸 (E)"
-                className={`p-2 rounded-lg ${
-                  theme === "light"
+                className={`p-2 rounded-lg ${theme === "light"
                     ? "text-gray-600 hover:text-gray-950 hover:bg-gray-100"
                     : "text-gray-400 hover:text-white hover:bg-[#21262d]"
-                } transition`}
+                  } transition`}
               >
                 <ArrowUpSquare size={15} />
               </button>
@@ -2017,11 +2148,10 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
                   triggerCopyToast("hole", "已表面打孔 hole(d=5, depth=10)");
                 }}
                 title="表面打孔 (I)"
-                className={`p-2 rounded-lg ${
-                  theme === "light"
+                className={`p-2 rounded-lg ${theme === "light"
                     ? "text-gray-600 hover:text-gray-950 hover:bg-gray-100"
                     : "text-gray-400 hover:text-white hover:bg-[#21262d]"
-                } transition`}
+                  } transition`}
               >
                 <CircleDot size={15} />
               </button>
@@ -2042,11 +2172,10 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
                   }
                 }}
                 title={`倒圆角 (Ctrl + B) - 当前 R=${quickRadius}mm`}
-                className={`p-2 rounded-lg ${
-                  theme === "light"
+                className={`p-2 rounded-lg ${theme === "light"
                     ? "text-gray-600 hover:text-gray-950 hover:bg-gray-100"
                     : "text-gray-400 hover:text-white hover:bg-[#21262d]"
-                } transition`}
+                  } transition`}
               >
                 <Sparkles size={15} />
               </button>
@@ -2059,11 +2188,10 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
                   triggerCopyToast("chamfer", `已倒斜角 (${quickRadius}mm)`);
                 }}
                 title="倒斜角 (Chamfer)"
-                className={`p-2 rounded-lg ${
-                  theme === "light"
+                className={`p-2 rounded-lg ${theme === "light"
                     ? "text-gray-600 hover:text-gray-950 hover:bg-gray-100"
                     : "text-gray-400 hover:text-white hover:bg-[#21262d]"
-                } transition`}
+                  } transition`}
               >
                 <Slash size={15} />
               </button>
@@ -2076,11 +2204,10 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
                   triggerCopyToast("shell", "已执行表面抽壳 (-2mm)");
                 }}
                 title="表面抽壳 (Shell -2mm)"
-                className={`p-2 rounded-lg ${
-                  theme === "light"
+                className={`p-2 rounded-lg ${theme === "light"
                     ? "text-gray-600 hover:text-gray-950 hover:bg-gray-100"
                     : "text-gray-400 hover:text-white hover:bg-[#21262d]"
-                } transition`}
+                  } transition`}
               >
                 <Minimize2 size={15} />
               </button>
@@ -2095,11 +2222,10 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
                   setCommandSelectedIndex(0);
                 }}
                 title="3D 极速命令搜索 (F3 / Space)"
-                className={`p-2 rounded-lg ${
-                  theme === "light"
+                className={`p-2 rounded-lg ${theme === "light"
                     ? "text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                     : "text-blue-400 hover:text-blue-300 hover:bg-blue-950/40"
-                } transition`}
+                  } transition`}
               >
                 <Search size={15} />
               </button>
@@ -2354,31 +2480,28 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
               <div className="flex items-center space-x-1 bg-[#0d1117] p-1 rounded-xl border border-[#30363d] my-3">
                 <button
                   onClick={() => setAddCategory("mesh")}
-                  className={`flex-1 py-1.5 rounded-lg font-medium transition ${
-                    addCategory === "mesh"
+                  className={`flex-1 py-1.5 rounded-lg font-medium transition ${addCategory === "mesh"
                       ? "bg-blue-600 text-white shadow-sm"
                       : "text-gray-400 hover:text-gray-200"
-                  }`}
+                    }`}
                 >
                   📦 网格基本体
                 </button>
                 <button
                   onClick={() => setAddCategory("sketch")}
-                  className={`flex-1 py-1.5 rounded-lg font-medium transition ${
-                    addCategory === "sketch"
+                  className={`flex-1 py-1.5 rounded-lg font-medium transition ${addCategory === "sketch"
                       ? "bg-blue-600 text-white shadow-sm"
                       : "text-gray-400 hover:text-gray-200"
-                  }`}
+                    }`}
                 >
                   ✏️ 2D草图拉伸
                 </button>
                 <button
                   onClick={() => setAddCategory("mechanical")}
-                  className={`flex-1 py-1.5 rounded-lg font-medium transition ${
-                    addCategory === "mechanical"
+                  className={`flex-1 py-1.5 rounded-lg font-medium transition ${addCategory === "mechanical"
                       ? "bg-blue-600 text-white shadow-sm"
                       : "text-gray-400 hover:text-gray-200"
-                  }`}
+                    }`}
                 >
                   ⚙️ 机械零部件
                 </button>
@@ -2765,11 +2888,10 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
                           setIsCommandPaletteOpen(false);
                         }}
                         onMouseEnter={() => setCommandSelectedIndex(idx)}
-                        className={`w-full text-left px-3 py-2 rounded-xl flex items-center justify-between transition ${
-                          isSelected
+                        className={`w-full text-left px-3 py-2 rounded-xl flex items-center justify-between transition ${isSelected
                             ? "bg-blue-600 text-white font-medium shadow-sm"
                             : "text-gray-300 hover:bg-[#21262d]"
-                        }`}
+                          }`}
                       >
                         <div className="flex items-center gap-2.5">
                           <IconComp
@@ -2778,20 +2900,18 @@ export const ThreeCadViewer: React.FC<ThreeCadViewerProps> = ({
                           />
                           <span>{cmd.title}</span>
                           <span
-                            className={`text-[10px] px-1.5 py-0.2 rounded-md ${
-                              isSelected
+                            className={`text-[10px] px-1.5 py-0.2 rounded-md ${isSelected
                                 ? "bg-blue-700/80 text-blue-100"
                                 : "bg-[#21262d] text-gray-400"
-                            }`}
+                              }`}
                           >
                             {cmd.category}
                           </span>
                         </div>
                         {cmd.shortcut && (
                           <span
-                            className={`text-[10px] font-mono ${
-                              isSelected ? "text-blue-200" : "text-gray-500"
-                            }`}
+                            className={`text-[10px] font-mono ${isSelected ? "text-blue-200" : "text-gray-500"
+                              }`}
                           >
                             {cmd.shortcut}
                           </span>

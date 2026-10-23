@@ -121,13 +121,14 @@ body {
   opacity: 0 !important;
 }
 
-/* 分割面板手柄样式 */
+/* 分割面板手柄样式 (垂直手柄) */
 .resize-handle {
   width: 4px;
   background-color: #21262d;
   transition: background-color 0.2s ease;
   position: relative;
-  z-index: 20;
+  z-index: 30;
+  overflow: visible;
 }
 .theme-light .resize-handle {
   background-color: #e1e4e8;
@@ -136,6 +137,25 @@ body {
 .resize-handle[data-resize-handle-active],
 .theme-light .resize-handle:hover,
 .theme-light .resize-handle[data-resize-handle-active] {
+  background-color: #388bfd;
+}
+
+/* 分割面板手柄样式 (水平手柄，用于 3D 视图与下方控制台分栏) */
+.resize-handle-h {
+  height: 4px;
+  background-color: #21262d;
+  transition: background-color 0.2s ease;
+  position: relative;
+  z-index: 20;
+  cursor: row-resize;
+}
+.theme-light .resize-handle-h {
+  background-color: #e1e4e8;
+}
+.resize-handle-h:hover,
+.resize-handle-h[data-resize-handle-active],
+.theme-light .resize-handle-h:hover,
+.theme-light .resize-handle-h[data-resize-handle-active] {
   background-color: #388bfd;
 }
 
@@ -148,29 +168,76 @@ body {
 }
 
 /* 默认隐藏挤压 3D 画布的内置侧栏，让画布 100% 居中 */
-.cad-viewer-container:not(.show-tree) .tcv_cad_tree {
+.cad-viewer-container:not(.show-tree) .tcv_cad_tree,
+.cad-viewer-container:not(.show-tree) .tcv_cad_tree_glass,
+.cad-viewer-container:not(.show-tree) [id*="tcv_cad_tree"] {
   display: none !important;
+  visibility: hidden !important;
+  width: 0 !important;
+}
+
+/* 展开拓扑结构树时，作为高层级毛玻璃浮动侧栏展示在 3D 视口左侧，不挤压 3D 画布 */
+.cad-viewer-container.show-tree .tcv_cad_tree,
+.cad-viewer-container.show-tree .tcv_cad_tree_glass,
+.cad-viewer-container.show-tree [id*="tcv_cad_tree"] {
+  display: flex !important;
+  flex-direction: column !important;
+  visibility: visible !important;
+  position: absolute !important;
+  left: 8px !important;
+  top: 8px !important;
+  bottom: 8px !important;
+  width: 260px !important;
+  max-width: 85% !important;
+  z-index: 50 !important;
+  background: rgba(13, 17, 23, 0.94) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border: 1px solid rgba(48, 54, 61, 0.85) !important;
+  border-radius: 8px !important;
+  overflow-y: auto !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
+  pointer-events: auto !important;
+}
+
+.theme-light .cad-viewer-container.show-tree .tcv_cad_tree,
+.theme-light .cad-viewer-container.show-tree .tcv_cad_tree_glass,
+.theme-light .cad-viewer-container.show-tree [id*="tcv_cad_tree"] {
+  background: rgba(255, 255, 255, 0.95) !important;
+  border: 1px solid rgba(209, 213, 219, 0.9) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12) !important;
+}
+
+.cad-viewer-container .tcv_cad_viewer {
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100% !important;
+  width: 100% !important;
+  overflow: hidden !important;
 }
 
 .cad-viewer-container .tcv_cad_body {
   width: 100% !important;
-  height: 100% !important;
-  flex: 1 1 100% !important;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
 }
 
 .cad-viewer-container .tcv_cad_view {
   width: 100% !important;
   height: 100% !important;
+  min-height: 0 !important;
+  position: relative !important;
 }
 
 .cad-viewer-container canvas {
   display: block;
-  width: 100% !important;
-  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
   outline: none;
 }
 
-/* 隐藏 three-cad-viewer 内部旧式状态弹窗与导航栏，全面由 UI/UX Pro Max 悬浮 HUD 接管 */
+/* 隐藏 three-cad-viewer 内部旧式状态弹窗与导航栏，全面由 UI/UX 悬浮 HUD 接管 */
 .tcv_cad_info,
 .tcv_cad_info_glass,
 .tcv_cad_navigation,

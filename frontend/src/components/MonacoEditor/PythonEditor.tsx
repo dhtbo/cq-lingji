@@ -20,6 +20,10 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { SearchReplaceWidget } from "./SearchReplaceWidget";
+import { setupMonacoLoader } from "@/lib/monacoLoader";
+
+// 立即配置 Monaco 智能高速镜像加载器 (国内百度源 / 阿里 NPM 镜像，海外 cdnjs)
+setupMonacoLoader();
 
 interface PythonEditorProps {
   code: string;
@@ -490,6 +494,16 @@ export const PythonEditor: React.FC<PythonEditorProps> = ({
           language="python"
           theme={colorMode === "light" ? "light" : "vs-dark"}
           value={code}
+          loading={
+            <div
+              className={`flex flex-col items-center justify-center h-full w-full text-xs gap-2 select-none ${
+                isLight ? "bg-white text-gray-500" : "bg-[#0d1117] text-gray-400"
+              }`}
+            >
+              <div className="w-5 h-5 border-2 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+              <span>正在载入 Monaco 智能代码编辑器 (国内镜像加速)...</span>
+            </div>
+          }
           onChange={(val) => {
             if (!isLocked && val !== undefined) {
               onChange(val);
@@ -512,171 +526,6 @@ export const PythonEditor: React.FC<PythonEditorProps> = ({
             padding: { top: 8, bottom: 8 },
           }}
         />
-      </div>
-
-      {/* 下方折叠式运行控制台与错误诊断区 */}
-      <div
-        className={`border-t ${isLight ? "border-[#e5e7eb] bg-white" : "border-[#30363d] bg-[#161b22]"
-          } flex flex-col transition-all duration-200 ${isConsoleActive ? "h-44" : "h-9"}`}
-      >
-        {/* 控制台栏头部 */}
-        <div
-          className={`h-9 px-3 flex items-center justify-between ${isLight ? "bg-[#f3f4f6] border-b border-[#e5e7eb] text-gray-800" : "bg-[#21262d] border-b border-[#30363d] text-gray-300"
-            } text-xs select-none`}
-        >
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={() => {
-                if (!isConsoleActive) {
-                  if (onToggleConsole) onToggleConsole();
-                  else setInternalConsoleOpen(true);
-                }
-                setConsoleTab("output");
-              }}
-              className={`flex items-center space-x-1.5 font-medium transition ${consoleTab === "output"
-                  ? isLight
-                    ? "text-amber-700 font-bold"
-                    : "text-amber-400 font-bold"
-                  : isLight
-                    ? "text-gray-500 hover:text-gray-800"
-                    : "text-gray-400 hover:text-gray-200"
-                }`}
-            >
-              <Terminal size={13} />
-              <span>控制台输出</span>
-            </button>
-
-            <button
-              onClick={() => {
-                if (!isConsoleActive) {
-                  if (onToggleConsole) onToggleConsole();
-                  else setInternalConsoleOpen(true);
-                }
-                setConsoleTab("diagnostics");
-              }}
-              className={`flex items-center space-x-1.5 font-medium transition ${consoleTab === "diagnostics"
-                  ? errorMessage
-                    ? "text-red-500 font-bold"
-                    : isLight
-                      ? "text-emerald-700 font-bold"
-                      : "text-emerald-400 font-bold"
-                  : isLight
-                    ? "text-gray-500 hover:text-gray-800"
-                    : "text-gray-400 hover:text-gray-200"
-                }`}
-            >
-              <AlertCircle size={13} />
-              <span>诊断与报错</span>
-              {errorMessage ? (
-                <span
-                  className={`px-1.5 py-0.2 ${isLight ? "bg-red-100 text-red-700 border-red-300" : "bg-red-950 text-red-400 border-red-800"
-                    } border rounded-full text-[10px] font-bold animate-pulse`}
-                >
-                  1 错误
-                </span>
-              ) : (
-                <span
-                  className={`px-1.5 py-0.2 ${isLight ? "bg-emerald-100 text-emerald-700 border-emerald-300" : "bg-emerald-950 text-emerald-400 border-emerald-800"
-                    } border rounded-full text-[10px]`}
-                >
-                  正常
-                </span>
-              )}
-            </button>
-          </div>
-
-          <div className="flex items-center space-x-2">
-            {execTime !== undefined && execTime !== null && (
-              <span
-                className={`text-[10px] ${isLight ? "text-emerald-700 font-semibold" : "text-emerald-400"
-                  } font-mono hidden sm:inline-block`}
-              >
-                耗时 {execTime}ms
-              </span>
-            )}
-
-            {/* 复制控制台 */}
-            <button
-              onClick={handleCopyConsole}
-              title="复制控制台内容"
-              className={`p-1 rounded transition ${isLight ? "text-gray-500 hover:text-gray-800 hover:bg-gray-200" : "text-gray-400 hover:text-white hover:bg-[#21262d]"
-                }`}
-            >
-              {copiedConsole ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
-            </button>
-
-            {/* 清空控制台 */}
-            <button
-              onClick={() => setCleared(true)}
-              title="清空控制台日志"
-              className={`p-1 rounded transition ${isLight ? "text-gray-500 hover:text-gray-800 hover:bg-gray-200" : "text-gray-400 hover:text-white hover:bg-[#21262d]"
-                }`}
-            >
-              <Trash2 size={12} />
-            </button>
-
-            <span className={`w-px h-3 ${isLight ? "bg-gray-300" : "bg-[#30363d]"}`}></span>
-
-            {/* 展开 / 收起控制台 */}
-            <button
-              onClick={() => {
-                if (onToggleConsole) onToggleConsole();
-                else setInternalConsoleOpen(!internalConsoleOpen);
-              }}
-              title={isConsoleActive ? "折叠控制台" : "展开控制台"}
-              className={`p-1 rounded transition ${isLight ? "text-gray-500 hover:text-gray-800 hover:bg-gray-200" : "text-gray-400 hover:text-white hover:bg-[#21262d]"
-                }`}
-            >
-              {isConsoleActive ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
-            </button>
-          </div>
-        </div>
-
-        {/* 控制台内容主体 */}
-        {isConsoleActive && (
-          <div
-            className={`flex-1 p-3 overflow-y-auto font-mono text-xs select-text ${isLight ? "bg-[#f8fafc] text-gray-800" : "bg-[#0d1117] text-gray-200"
-              }`}
-          >
-            {consoleTab === "output" &&
-              (activeStdout ? (
-                <pre className={`whitespace-pre-wrap leading-relaxed ${isLight ? "text-gray-800" : "text-gray-200"} font-mono`}>
-                  {activeStdout}
-                </pre>
-              ) : (
-                <div className={`${isLight ? "text-gray-400" : "text-gray-500"} italic text-[11px] flex items-center gap-1.5 py-2`}>
-                  <Terminal size={14} className={isLight ? "text-gray-400" : "text-gray-600"} />
-                  <span>控制台就绪。在 Python 代码中使用 print(...) 输出，或点击「运行」查看输出。</span>
-                </div>
-              ))}
-
-            {consoleTab === "diagnostics" &&
-              (errorMessage ? (
-                <div
-                  className={`p-3 rounded-lg space-y-2 ${isLight
-                      ? "bg-red-50 border border-red-200 text-red-900"
-                      : "bg-red-950/40 border border-red-800/80 text-red-200"
-                    }`}
-                >
-                  <div className={`font-bold flex items-center gap-1.5 ${isLight ? "text-red-700" : "text-red-400"}`}>
-                    <AlertTriangle size={15} />
-                    <span>几何构造或语法错误</span>
-                  </div>
-                  <pre
-                    className={`whitespace-pre-wrap font-mono text-xs leading-relaxed p-2 rounded ${isLight ? "bg-white border border-red-100 text-red-900" : "bg-black/40 text-red-200/90"
-                      }`}
-                  >
-                    {errorMessage}
-                  </pre>
-                </div>
-              ) : (
-                <div className={`${isLight ? "text-emerald-700" : "text-emerald-400"} text-xs flex items-center gap-2 py-2`}>
-                  <CheckCircle2 size={16} />
-                  <span>代码语法静态审查通过，OpenCASCADE 几何内核计算正常，无异常诊断。</span>
-                </div>
-              ))}
-          </div>
-        )}
       </div>
     </div>
   );

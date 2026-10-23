@@ -19,8 +19,19 @@ import {
   AlertCircle,
   Code2,
   Blocks,
+  Plus,
+  Trash2,
+  PlusCircle,
+  Server,
+  Tag,
 } from "lucide-react";
-import { testAiApiConnection, DEFAULT_AI_CONFIG } from "@/lib/aiCadSkill";
+import {
+  testAiApiConnection,
+  DEFAULT_AI_CONFIG,
+  AiEndpointConfig,
+  DEFAULT_AI_ENDPOINTS,
+} from "@/lib/aiCadSkill";
+import { WorkingMode } from "../BlocklyEditor/toolbox";
 
 export interface EditorSettings {
   colorMode: "light" | "dark";
@@ -31,7 +42,11 @@ export interface EditorSettings {
   translateErrors: boolean;
   toolboxPinned: boolean;
   defaultViewMode: "code" | "block";
-  // 智能体配置 (OpenAI 兼容接口 / Gemini / DeepSeek)
+  // 工作模式设置 (LogoUp 模式 / CadQuery 专业模式 / build123d 专业模式)
+  workingMode: WorkingMode;
+  // 智能体多 API 接口与多模型配置体系
+  aiEndpoints: AiEndpointConfig[];
+  aiActiveEndpointId: string;
   aiBaseUrl: string;
   aiApiKey: string;
   aiModel: string;
@@ -64,9 +79,12 @@ export const DEFAULT_EDITOR_SETTINGS: EditorSettings = {
   translateErrors: true,
   toolboxPinned: false,
   defaultViewMode: "code",
-  aiBaseUrl: DEFAULT_AI_CONFIG.baseUrl,
-  aiApiKey: DEFAULT_AI_CONFIG.apiKey,
-  aiModel: DEFAULT_AI_CONFIG.model,
+  workingMode: "build123d",
+  aiEndpoints: DEFAULT_AI_ENDPOINTS,
+  aiActiveEndpointId: DEFAULT_AI_ENDPOINTS[0].id,
+  aiBaseUrl: DEFAULT_AI_ENDPOINTS[0].baseUrl,
+  aiApiKey: DEFAULT_AI_ENDPOINTS[0].apiKey,
+  aiModel: DEFAULT_AI_ENDPOINTS[0].models[0],
   aiEnableSkill: DEFAULT_AI_CONFIG.enableSkill,
   aiTemperature: DEFAULT_AI_CONFIG.temperature,
 };
@@ -96,6 +114,7 @@ export const EditorSettingsModal: React.FC<EditorSettingsModalProps> = ({
   const [activeTab, setActiveTab] = useState<"general" | "ai">(initialTab);
   const [showApiKey, setShowApiKey] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
+  const [newModelInput, setNewModelInput] = useState("");
   const [testResult, setTestResult] = useState<{
     success: boolean;
     latencyMs?: number;
@@ -140,12 +159,109 @@ export const EditorSettingsModal: React.FC<EditorSettingsModalProps> = ({
     }
   };
 
+  const currentEndpoints =
+    settings.aiEndpoints && settings.aiEndpoints.length > 0
+      ? settings.aiEndpoints
+      : DEFAULT_AI_ENDPOINTS;
+
+  const activeEndpoint =
+    currentEndpoints.find((ep) => ep.id === settings.aiActiveEndpointId) || currentEndpoints[0];
+
+  const handleSelectEndpoint = (epId: string) => {
+    const target = currentEndpoints.find((ep) => ep.id === epId);
+    if (!target) return;
+    onUpdateSettings({
+      ...settings,
+      aiActiveEndpointId: target.id,
+      aiBaseUrl: target.baseUrl,
+      aiApiKey: target.apiKey,
+      aiModel: target.models[0] || "gemini-3.8-flash-low",
+    });
+    setTestResult(null);
+  };
+
+  const handleUpdateCurrentEndpoint = (field: keyof AiEndpointConfig, value: any) => {
+    const updated = currentEndpoints.map((ep) => {
+      if (ep.id === activeEndpoint.id) {
+        return { ...ep, [field]: value };
+      }
+      return ep;
+    });
+    const newSettings: EditorSettings = {
+      ...settings,
+      aiEndpoints: updated,
+    };
+    if (field === "baseUrl") newSettings.aiBaseUrl = value;
+    if (field === "apiKey") newSettings.aiApiKey = value;
+    onUpdateSettings(newSettings);
+  };
+
+  const handleAddModelToEndpoint = (modelName: string) => {
+    const trimmed = modelName.trim();
+    if (!trimmed || activeEndpoint.models.includes(trimmed)) return;
+    const newModels = [...activeEndpoint.models, trimmed];
+    handleUpdateCurrentEndpoint("models", newModels);
+    setNewModelInput("");
+  };
+
+  const handleRemoveModelFromEndpoint = (modelToRemove: string) => {
+    if (activeEndpoint.models.length <= 1) return; // 至少保留一个模型
+    const newModels = activeEndpoint.models.filter((m) => m !== modelToRemove);
+    handleUpdateCurrentEndpoint("models", newModels);
+    if (settings.aiModel === modelToRemove) {
+      updateSetting("aiModel", newModels[0]);
+    }
+  };
+
+  const handleAddNewEndpoint = () => {
+    const newId = `custom-${Date.now()}`;
+    const newEp: AiEndpointConfig = {
+      id: newId,
+      name: `自定义接口 ${currentEndpoints.length + 1}`,
+      baseUrl: "https://api.openai.com/v1",
+      apiKey: "",
+      models: ["gpt-4o-mini", "gpt-4o"],
+      isCustom: true,
+    };
+    const updated = [...currentEndpoints, newEp];
+    onUpdateSettings({
+      ...settings,
+      aiEndpoints: updated,
+      aiActiveEndpointId: newId,
+      aiBaseUrl: newEp.baseUrl,
+      aiApiKey: newEp.apiKey,
+      aiModel: newEp.models[0],
+    });
+    setTestResult(null);
+  };
+
+  const handleDeleteSpecificEndpoint = (epId: string) => {
+    if (currentEndpoints.length <= 1) return;
+    const updated = currentEndpoints.filter((ep) => ep.id !== epId);
+    const nextActive = epId === activeEndpoint.id ? updated[0] : activeEndpoint;
+    onUpdateSettings({
+      ...settings,
+      aiEndpoints: updated,
+      aiActiveEndpointId: nextActive.id,
+      aiBaseUrl: nextActive.baseUrl,
+      aiApiKey: nextActive.apiKey,
+      aiModel: nextActive.models[0],
+    });
+    setTestResult(null);
+  };
+
+  const handleDeleteEndpoint = () => {
+    handleDeleteSpecificEndpoint(activeEndpoint.id);
+  };
+
   const handleResetAiDefaults = () => {
     onUpdateSettings({
       ...settings,
-      aiBaseUrl: DEFAULT_AI_CONFIG.baseUrl,
-      aiApiKey: DEFAULT_AI_CONFIG.apiKey,
-      aiModel: DEFAULT_AI_CONFIG.model,
+      aiEndpoints: DEFAULT_AI_ENDPOINTS,
+      aiActiveEndpointId: DEFAULT_AI_ENDPOINTS[0].id,
+      aiBaseUrl: DEFAULT_AI_ENDPOINTS[0].baseUrl,
+      aiApiKey: DEFAULT_AI_ENDPOINTS[0].apiKey,
+      aiModel: DEFAULT_AI_ENDPOINTS[0].models[0],
       aiEnableSkill: DEFAULT_AI_CONFIG.enableSkill,
       aiTemperature: DEFAULT_AI_CONFIG.temperature,
     });
@@ -199,6 +315,70 @@ export const EditorSettingsModal: React.FC<EditorSettingsModalProps> = ({
           {/* TAB 1: 偏好与主题 */}
           {activeTab === "general" && (
             <div className="space-y-5">
+              {/* 0. 工作模式选择 (LogoUp 模式 / CadQuery 专业模式 / build123d 专业模式) */}
+              <div className="flex items-start justify-between">
+                <div className="min-w-[72px] pt-1">
+                  <span className="font-bold text-gray-800">工作模式：</span>
+                  <div className="text-[10px] text-gray-400 leading-tight mt-0.5">
+                    隔离并隐藏无关积木与智能体
+                  </div>
+                </div>
+                <div className="flex-1 grid grid-cols-3 gap-2 pl-2">
+                  {/* 1. LogoUp 3D 模式 */}
+                  <button
+                    type="button"
+                    data-mode="logoup"
+                    onClick={() => updateSetting("workingMode", "logoup")}
+                    className={`p-2.5 rounded-xl border cursor-pointer transition flex flex-col items-center text-center ${
+                      settings.workingMode === "logoup"
+                        ? "border-amber-500 bg-amber-50/80 text-amber-950 font-bold ring-2 ring-amber-400/40 shadow-xs"
+                        : "border-gray-200 hover:border-gray-300 text-gray-700 bg-white"
+                    }`}
+                  >
+                    <span className="text-xs font-bold">🧭 LogoUp 模式</span>
+                    <span className="text-[10px] text-gray-500 font-normal mt-1 leading-snug">
+                      空间海龟运动与三维构件
+                    </span>
+                  </button>
+
+                  {/* 2. CadQuery 专业模式 */}
+                  <button
+                    type="button"
+                    data-mode="cadquery"
+                    onClick={() => updateSetting("workingMode", "cadquery")}
+                    className={`p-2.5 rounded-xl border cursor-pointer transition flex flex-col items-center text-center ${
+                      settings.workingMode === "cadquery"
+                        ? "border-purple-500 bg-purple-50/80 text-purple-950 font-bold ring-2 ring-purple-400/40 shadow-xs"
+                        : "border-gray-200 hover:border-gray-300 text-gray-700 bg-white"
+                    }`}
+                  >
+                    <span className="text-xs font-bold">📐 CadQuery 模式</span>
+                    <span className="text-[10px] text-gray-500 font-normal mt-1 leading-snug">
+                      工作平面 B-Rep 工业建模
+                    </span>
+                  </button>
+
+                  {/* 3. build123d 专业模式 */}
+                  <button
+                    type="button"
+                    data-mode="build123d"
+                    onClick={() => updateSetting("workingMode", "build123d")}
+                    className={`p-2.5 rounded-xl border cursor-pointer transition flex flex-col items-center text-center ${
+                      settings.workingMode === "build123d" || !settings.workingMode
+                        ? "border-blue-500 bg-blue-50/80 text-blue-950 font-bold ring-2 ring-blue-400/40 shadow-xs"
+                        : "border-gray-200 hover:border-gray-300 text-gray-700 bg-white"
+                    }`}
+                  >
+                    <span className="text-xs font-bold">🧱 build123d 模式</span>
+                    <span className="text-[10px] text-gray-500 font-normal mt-1 leading-snug">
+                      建造者容器与拓扑操作
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="h-px bg-gray-100 my-1"></div>
+
               {/* 1. 主题模式切换 (白天模式 / 黑夜模式) */}
               <div className="flex items-start justify-between">
                 <span className="font-medium text-gray-700 pt-2 min-w-[72px]">主题模式：</span>
@@ -395,7 +575,7 @@ export const EditorSettingsModal: React.FC<EditorSettingsModalProps> = ({
             </div>
           )}
 
-          {/* TAB 2: 3D 编程智能体配置 */}
+          {/* TAB 2: 3D 编程智能体配置 (多接口与多模型管理) */}
           {activeTab === "ai" && (
             <div className="space-y-4 text-xs">
               {/* 提示信息卡片 */}
@@ -403,88 +583,220 @@ export const EditorSettingsModal: React.FC<EditorSettingsModalProps> = ({
                 <Sparkles size={16} className="text-purple-600 flex-shrink-0 mt-0.5" />
                 <div>
                   <div className="font-bold text-xs text-purple-950">
-                    OpenAI 兼容智能体接口 · Gemini 3.8 / DeepSeek 驱动
+                    OpenAI 兼容智能体接口 · Gemini 3.8 / DeepSeek / 本地大模型
                   </div>
                   <div className="text-[11px] text-purple-800/80 mt-0.5">
-                    支持使用 OpenAI SDK 兼容协议接入 Gemini、DeepSeek 或自定义大模型服务。
+                    支持配置多个 API 服务接口，每个接口可维护独立的模型列表，在智能体对话中无缝切换。
                   </div>
                 </div>
               </div>
 
-              {/* 1. 模型接口地址 (Base URL) */}
-              <div className="space-y-1">
-                <label className="font-bold text-gray-700 flex items-center gap-1">
-                  <Globe size={13} className="text-purple-600" />
-                  <span>接口地址 (Base URL)</span>
-                </label>
-                <input
-                  type="text"
-                  value={settings.aiBaseUrl || ""}
-                  onChange={(e) => updateSetting("aiBaseUrl", e.target.value)}
-                  placeholder="https://ag.ljcode.cn/v1"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs font-mono text-gray-900 bg-white focus:outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600"
-                />
-                <p className="text-[10px] text-gray-400">
-                  支持 OpenAI 标准 Chat Completions 协议地址，默认为 https://ag.ljcode.cn/v1
-                </p>
-              </div>
+              {/* 1. API 接口选择与管理 */}
+              <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-gray-800 flex items-center gap-1.5">
+                    <Server size={14} className="text-purple-600" />
+                    <span>选择当前 API 接口：</span>
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleAddNewEndpoint}
+                      className="px-2 py-1 bg-white hover:bg-purple-50 border border-purple-300 text-purple-700 rounded-md text-[11px] font-semibold flex items-center gap-1 transition shadow-2xs"
+                      title="添加新的自定义 API 接口"
+                    >
+                      <Plus size={12} />
+                      <span>添加接口</span>
+                    </button>
+                    {currentEndpoints.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={handleDeleteEndpoint}
+                        className="px-2 py-1 bg-white hover:bg-rose-50 border border-rose-300 text-rose-600 rounded-md text-[11px] font-semibold flex items-center gap-1 transition shadow-2xs"
+                        title={`删除当前接口「${activeEndpoint.name}」配置`}
+                      >
+                        <Trash2 size={12} />
+                        <span>删除当前接口</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
 
-              {/* 2. API Key */}
-              <div className="space-y-1">
-                <label className="font-bold text-gray-700 flex items-center justify-between">
-                  <span className="flex items-center gap-1">
-                    <Key size={13} className="text-purple-600" />
-                    <span>接口密钥 (API Key)</span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setShowApiKey((prev) => !prev)}
-                    className="text-[11px] text-purple-600 hover:text-purple-800 flex items-center gap-0.5"
-                  >
-                    {showApiKey ? <EyeOff size={12} /> : <Eye size={12} />}
-                    <span>{showApiKey ? "隐藏明文" : "显示明文"}</span>
-                  </button>
-                </label>
-                <div className="relative">
+                <div className="grid grid-cols-2 gap-1.5">
+                  {currentEndpoints.map((ep) => {
+                    const isCurrent = ep.id === activeEndpoint.id;
+                    return (
+                      <div
+                        key={ep.id}
+                        onClick={() => handleSelectEndpoint(ep.id)}
+                        className={`px-2.5 py-1.5 rounded-lg border text-left transition flex items-center justify-between cursor-pointer group ${
+                          isCurrent
+                            ? "bg-purple-100/90 border-purple-400 text-purple-900 font-bold shadow-2xs ring-1 ring-purple-400/30"
+                            : "bg-white border-gray-200 hover:border-gray-300 text-gray-700"
+                        }`}
+                      >
+                        <span className="truncate flex-1">{ep.name}</span>
+                        <div className="flex items-center gap-1 shrink-0 ml-1">
+                          {isCurrent && <Check size={13} className="text-purple-700 shrink-0" />}
+                          {currentEndpoints.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteSpecificEndpoint(ep.id);
+                              }}
+                              className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-rose-600 p-0.5 rounded transition"
+                              title={`删除「${ep.name}」配置`}
+                            >
+                              <Trash2 size={11} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="pt-1">
+                  <label className="text-[11px] text-gray-600 font-medium">接口自定义名称：</label>
                   <input
-                    type={showApiKey ? "text" : "password"}
-                    value={settings.aiApiKey || ""}
-                    onChange={(e) => updateSetting("aiApiKey", e.target.value)}
-                    placeholder="请输入 API Key"
-                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg text-xs font-mono text-gray-900 bg-white focus:outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600"
+                    type="text"
+                    value={activeEndpoint.name}
+                    onChange={(e) => handleUpdateCurrentEndpoint("name", e.target.value)}
+                    className="w-full mt-0.5 px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs text-gray-900 bg-white focus:outline-none focus:border-purple-600"
+                    placeholder="例如：公司内网 Ollama 服务"
                   />
                 </div>
               </div>
 
-              {/* 3. 模型名称 (Model) */}
-              <div className="space-y-1.5">
-                <label className="font-bold text-gray-700 flex items-center gap-1">
-                  <Cpu size={13} className="text-purple-600" />
-                  <span>智能体模型 (Model Name)</span>
-                </label>
-                <input
-                  type="text"
-                  value={settings.aiModel || ""}
-                  onChange={(e) => updateSetting("aiModel", e.target.value)}
-                  placeholder="gemini-3.8-flash-medium"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs font-mono text-gray-900 bg-white focus:outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600"
-                />
+              {/* 2. 接口地址与 API Key */}
+              <div className="grid grid-cols-1 gap-3">
+                {/* 接口地址 (Base URL) */}
+                <div className="space-y-1">
+                  <label className="font-bold text-gray-700 flex items-center gap-1">
+                    <Globe size={13} className="text-purple-600" />
+                    <span>接口地址 (Base URL)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={activeEndpoint.baseUrl}
+                    onChange={(e) => handleUpdateCurrentEndpoint("baseUrl", e.target.value)}
+                    placeholder="https://ag.ljcode.cn/v1"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs font-mono text-gray-900 bg-white focus:outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600"
+                  />
+                </div>
 
-                {/* 推荐模型标签 */}
-                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                  <span className="text-[10px] text-gray-400 font-medium">推荐选用:</span>
-                  {RECOMMENDED_MODELS.map((rm) => (
+                {/* API Key */}
+                <div className="space-y-1">
+                  <label className="font-bold text-gray-700 flex items-center justify-between">
+                    <span className="flex items-center gap-1">
+                      <Key size={13} className="text-purple-600" />
+                      <span>接口密钥 (API Key)</span>
+                    </span>
                     <button
-                      key={rm.id}
                       type="button"
-                      onClick={() => updateSetting("aiModel", rm.id)}
-                      className={`px-2 py-0.5 rounded-md text-[10px] font-mono border transition ${
-                        settings.aiModel === rm.id
-                          ? "bg-purple-100 border-purple-400 text-purple-800 font-bold"
-                          : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
-                      }`}
+                      onClick={() => setShowApiKey((prev) => !prev)}
+                      className="text-[11px] text-purple-600 hover:text-purple-800 flex items-center gap-0.5"
                     >
-                      {rm.label} ({rm.tag})
+                      {showApiKey ? <EyeOff size={12} /> : <Eye size={12} />}
+                      <span>{showApiKey ? "隐藏明文" : "显示明文"}</span>
+                    </button>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showApiKey ? "text" : "password"}
+                      value={activeEndpoint.apiKey}
+                      onChange={(e) => handleUpdateCurrentEndpoint("apiKey", e.target.value)}
+                      placeholder={activeEndpoint.isCustom ? "请输入 API Key (本地 Ollama 等可填任意值)" : "官方加速站已内置专属 Key"}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs font-mono text-gray-900 bg-white focus:outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. 模型列表管理 (当前接口所包含的模型) */}
+              <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-gray-800 flex items-center gap-1.5">
+                    <Tag size={13} className="text-purple-600" />
+                    <span>接口模型列表 (支持单/多模型)：</span>
+                  </label>
+                  <span className="text-[10px] text-gray-400">点击选中高亮为当前默认</span>
+                </div>
+
+                {/* 模型标签云 */}
+                <div className="flex flex-wrap gap-1.5 min-h-[32px] p-2 bg-white rounded-lg border border-gray-200">
+                  {activeEndpoint.models.map((m) => {
+                    const isSelected = settings.aiModel === m;
+                    return (
+                      <span
+                        key={m}
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-mono border transition ${
+                          isSelected
+                            ? "bg-purple-100 border-purple-400 text-purple-900 font-bold shadow-2xs ring-1 ring-purple-400/40"
+                            : "bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100"
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => updateSetting("aiModel", m)}
+                          className="hover:underline flex items-center gap-1"
+                          title="设为当前生效模型"
+                        >
+                          {isSelected && <Check size={11} className="text-purple-700" />}
+                          <span>{m}</span>
+                        </button>
+                        {activeEndpoint.models.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveModelFromEndpoint(m)}
+                            className="text-gray-400 hover:text-rose-600 p-0.5 rounded transition"
+                            title="从当前接口移除此模型"
+                          >
+                            <X size={11} />
+                          </button>
+                        )}
+                      </span>
+                    );
+                  })}
+                </div>
+
+                {/* 添加模型输入框 */}
+                <div className="flex items-center gap-1.5 pt-1">
+                  <input
+                    type="text"
+                    value={newModelInput}
+                    onChange={(e) => setNewModelInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleAddModelToEndpoint(newModelInput);
+                      }
+                    }}
+                    placeholder="输入模型名称 (如 qwen2.5-coder:7b)"
+                    className="flex-1 px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs font-mono text-gray-900 bg-white focus:outline-none focus:border-purple-600"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleAddModelToEndpoint(newModelInput)}
+                    className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-bold text-xs flex items-center gap-1 shadow-2xs transition active:scale-95"
+                  >
+                    <Plus size={12} />
+                    <span>添加</span>
+                  </button>
+                </div>
+
+                {/* 快速推荐添加 */}
+                <div className="flex flex-wrap items-center gap-1 pt-1">
+                  <span className="text-[10px] text-gray-400">快捷建议:</span>
+                  {["gemini-3.8-flash-low", "gemini-3.8-flash-medium", "deepseek-chat", "gpt-4o-mini"].map((sugg) => (
+                    <button
+                      key={sugg}
+                      type="button"
+                      onClick={() => handleAddModelToEndpoint(sugg)}
+                      className="px-1.5 py-0.5 bg-gray-100 hover:bg-gray-200 border border-gray-200 rounded text-[10px] text-gray-600 font-mono transition"
+                    >
+                      +{sugg}
                     </button>
                   ))}
                 </div>
@@ -524,7 +836,7 @@ export const EditorSettingsModal: React.FC<EditorSettingsModalProps> = ({
                   title="重置为默认 Gemini 3.8 接口与密钥"
                 >
                   <RotateCcw size={12} />
-                  <span>恢复默认智能体配置</span>
+                  <span>恢复默认配置</span>
                 </button>
 
                 <button

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   ChevronLeft,
   Home,
@@ -10,7 +10,6 @@ import {
   Code2,
   Check,
   Save,
-  Share2,
   Download,
   Trophy,
   ChevronDown,
@@ -25,6 +24,7 @@ import {
   Printer,
   Sun,
   Moon,
+  Clock,
 } from "lucide-react";
 import { CAD_TEMPLATES, CadTemplate } from "../Templates/cadTemplates";
 import { HelpModal } from "./HelpModal";
@@ -33,6 +33,11 @@ import {
   THEME_COLOR_OPTIONS,
   ThemeColorOption,
 } from "../EditorSettings/EditorSettingsModal";
+import {
+  getRecentProjects,
+  clearRecentProjects,
+  ProjectMetadata,
+} from "@/lib/projectStorage";
 
 export type ViewMode = "code" | "block";
 
@@ -43,6 +48,10 @@ interface HeaderToolbarProps {
   onProjectNameChange: (name: string) => void;
   onSave: () => void;
   onLoadSavedProject?: () => void;
+  onLoadProjectById?: (projectId: string) => void;
+  onNewProject?: () => void;
+  onOpenLocalFolder?: () => void;
+  onCloseProject?: () => void;
   isSaved?: boolean;
   onRun: () => void;
   onExportStl: () => void;
@@ -71,6 +80,10 @@ export const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
   onProjectNameChange,
   onSave,
   onLoadSavedProject,
+  onLoadProjectById,
+  onNewProject,
+  onOpenLocalFolder,
+  onCloseProject,
   isSaved = true,
   onRun,
   onExportStl,
@@ -96,8 +109,22 @@ export const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
   const [showFileMenu, setShowFileMenu] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [showHelpMenu, setShowHelpMenu] = useState(false);
-  const [showShareToast, setShowShareToast] = useState(false);
   const [showLoginToast, setShowLoginToast] = useState(false);
+  const [recentProjects, setRecentProjects] = useState<ProjectMetadata[]>([]);
+
+  useEffect(() => {
+    if (showFileMenu) {
+      setRecentProjects(getRecentProjects(5));
+    }
+  }, [showFileMenu]);
+
+  const formatTimeAgo = (ts: number): string => {
+    const diff = Date.now() - ts;
+    if (diff < 60000) return "刚刚";
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`;
+    return `${Math.floor(diff / 86400000)}天前`;
+  };
 
   const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -129,11 +156,6 @@ export const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
     ? "bg-[#FFCE1C] text-[#D97E00] placeholder-[#D97E00]/60 border-transparent focus:border-[#D97E00]"
     : "bg-white/20 text-white placeholder-white/70 border-transparent focus:border-white";
 
-  const handleShare = () => {
-    setShowShareToast(true);
-    setTimeout(() => setShowShareToast(false), 2500);
-  };
-
   const handleLogin = () => {
     setShowLoginToast(true);
     setTimeout(() => setShowLoginToast(false), 2500);
@@ -143,384 +165,472 @@ export const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
     <>
       <header
         style={{ backgroundColor: headerBg }}
-        className="relative z-[150] h-10 px-3 flex items-center justify-between select-none shadow-xs border-b border-black/5 transition-colors duration-200"
+        className="relative z-[150] h-[52px] px-4 flex items-center justify-between select-none shadow-sm border-b border-black/10 transition-colors duration-200"
       >
-        {/* 左侧：< 🏠 | 📁▾ ⚙️▾ ❓▾ </> */}
-        <div className="flex items-center space-x-1">
-          {/* 返回按钮 < */}
-          <button
-            onClick={() => window.history.length > 1 ? window.history.back() : window.location.reload()}
-            title="返回上一页 / 刷新"
-            className={`p-1 rounded-md ${iconTextColor} ${iconHoverBg} transition active:scale-95`}
-          >
-            <ChevronLeft size={17} className="stroke-[2.6]" />
-          </button>
-
-          {/* 首页 🏠 */}
-          <button
-            onClick={() => window.location.href = "/"}
-            title="返回工作台首页"
-            className={`p-1 rounded-md ${iconTextColor} ${iconHoverBg} transition active:scale-95`}
-          >
-            <Home size={16} className="stroke-[2.4]" />
-          </button>
-
-          {/* 竖线分隔符 | */}
-          <div className={`h-4 w-[1.5px] ${dividerColor} mx-1`} />
-
-          {/* 文件菜单 📁 ▾ */}
-          <div className="relative">
+        {/* 左侧：🏠 首页 | 📁 文件 ▾ ⚙️ 设置 ▾ ❓ 帮助 ▾      [ ⊞ 积木 | </> 代码 ] */}
+        <div className="flex items-center">
+          <div className="flex items-center space-x-1.5">
+            {/* 首页 🏠 按钮 (保留一个，点击返回首页 / 欢迎卡片) */}
             <button
               onClick={() => {
-                setShowFileMenu((prev) => !prev);
-                setShowSettingsMenu(false);
-                setShowHelpMenu(false);
+                if (onCloseProject) {
+                  onCloseProject();
+                } else {
+                  window.location.href = "/";
+                }
               }}
-              className={`px-1.5 py-1 rounded-md ${iconTextColor} ${iconHoverBg} font-bold text-xs flex items-center space-x-0.5 transition active:scale-95`}
-              title="作品与模板库文件菜单"
+              title="返回工作台首页 / 新建或切换项目"
+              className={`p-1.5 rounded-lg ${iconTextColor} ${iconHoverBg} transition active:scale-95 flex items-center gap-1`}
             >
-              <Folder size={15} className="fill-current stroke-[2]" />
-              <ChevronDown size={11} className="stroke-[2.5]" />
+              <Home size={18} className="stroke-[2.4]" />
             </button>
 
-            {showFileMenu && (
-              <div
-                className="absolute top-full left-0 mt-1.5 w-52 bg-white rounded-xl shadow-xl py-1.5 z-[250] text-xs border border-gray-100 text-gray-800 animate-fadeIn"
-                onMouseLeave={() => setShowFileMenu(false)}
+            {/* 竖线分隔符 | */}
+            <div className={`h-4 w-[1.5px] ${dividerColor} mx-1`} />
+
+            {/* 精简重构的文件菜单 📁 ▾ */}
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setShowFileMenu((prev) => !prev);
+                  setShowSettingsMenu(false);
+                  setShowHelpMenu(false);
+                }}
+                className={`px-2 py-1.5 rounded-lg ${iconTextColor} ${iconHoverBg} font-bold text-xs flex items-center space-x-1 transition active:scale-95`}
+                title="作品文件、打开本地工程与导出"
               >
-                <div className="px-3 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                  作品工程
-                </div>
-                <button
-                  onClick={() => {
-                    onSave();
-                    setShowFileMenu(false);
-                  }}
-                  className="w-full text-left px-3 py-1.5 hover:bg-amber-50 hover:text-amber-700 flex items-center justify-between"
+                <Folder size={16} className="fill-current stroke-[2]" />
+                <span className="hidden sm:inline">文件</span>
+                <ChevronDown size={12} className="stroke-[2.5]" />
+              </button>
+
+              {showFileMenu && (
+                <div
+                  className="absolute top-full left-0 mt-1.5 w-56 bg-white rounded-2xl shadow-2xl py-2 z-[250] text-xs border border-gray-100 text-gray-800 animate-fadeIn"
+                  onMouseLeave={() => setShowFileMenu(false)}
                 >
-                  <span className="flex items-center gap-1.5">
-                    <Save size={13} className="text-amber-600" />
-                    <span>保存工程到本地暂存</span>
-                  </span>
-                  <span className="text-[10px] text-gray-400">Ctrl+S</span>
-                </button>
-                {onLoadSavedProject && (
+                  <div className="px-3 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                    项目管理
+                  </div>
+
+                  {/* 新建项目 */}
                   <button
                     onClick={() => {
-                      onLoadSavedProject();
+                      if (onNewProject) onNewProject();
                       setShowFileMenu(false);
                     }}
                     className="w-full text-left px-3 py-1.5 hover:bg-amber-50 hover:text-amber-700 flex items-center justify-between"
                   >
-                    <span className="flex items-center gap-1.5">
-                      <FolderOpen size={13} className="text-amber-600" />
-                      <span>从本地暂存载入工程</span>
+                    <span className="flex items-center gap-2">
+                      <Sparkles size={14} className="text-amber-500" />
+                      <span className="font-semibold">新建 3D 项目...</span>
                     </span>
-                    <span className="text-[10px] bg-amber-100 text-amber-800 px-1 rounded font-mono">Load</span>
+                    <span className="text-[10px] text-gray-400 font-mono">New</span>
                   </button>
-                )}
-                {onDownloadPy && (
+
+                  {/* 打开本地项目文件夹 */}
                   <button
                     onClick={() => {
-                      onDownloadPy();
+                      if (onOpenLocalFolder) {
+                        onOpenLocalFolder();
+                      } else {
+                        fileInputRef.current?.click();
+                      }
                       setShowFileMenu(false);
                     }}
-                    className="w-full text-left px-3 py-1.5 hover:bg-amber-50 hover:text-amber-700 flex items-center justify-between"
+                    className="w-full text-left px-3 py-1.5 hover:bg-blue-50 hover:text-blue-700 flex items-center justify-between"
                   >
-                    <span className="flex items-center gap-1.5">
-                      <FileCode size={13} className="text-blue-600" />
-                      <span>下载 build123d 源码 (.py)</span>
+                    <span className="flex items-center gap-2">
+                      <FolderOpen size={14} className="text-blue-500" />
+                      <span className="font-semibold">打开本地项目文件夹...</span>
                     </span>
-                    <span className="text-[10px] bg-blue-100 text-blue-700 px-1 rounded font-mono">B3D</span>
+                    <span className="text-[10px] bg-blue-100 text-blue-700 px-1 rounded font-mono">Folder</span>
                   </button>
-                )}
-                {onDownloadCadQueryPy && (
-                  <button
-                    onClick={() => {
-                      onDownloadCadQueryPy();
-                      setShowFileMenu(false);
-                    }}
-                    className="w-full text-left px-3 py-1.5 hover:bg-amber-50 hover:text-amber-700 flex items-center justify-between"
-                  >
-                    <span className="flex items-center gap-1.5">
-                      <FileCode size={13} className="text-amber-600" />
-                      <span>导出为 CadQuery 脚本 (.py) [单向]</span>
-                    </span>
-                    <span className="text-[10px] bg-amber-100 text-amber-700 px-1 rounded font-mono">CQ</span>
-                  </button>
-                )}
-                {onExportProject && (
-                  <button
-                    onClick={() => {
-                      onExportProject();
-                      setShowFileMenu(false);
-                    }}
-                    className="w-full text-left px-3 py-1.5 hover:bg-amber-50 hover:text-amber-700 flex items-center justify-between"
-                  >
-                    <span className="flex items-center gap-1.5">
-                      <FileDown size={13} className="text-purple-600" />
-                      <span>导出完整工程存档 (.cq.json)</span>
-                    </span>
-                    <span className="text-[10px] bg-purple-100 text-purple-700 px-1 rounded font-mono">Zip</span>
-                  </button>
-                )}
-                {onImportProject && (
+
+                  {/* 打开工程存档文件 (.cqproj.json / .json / .py) */}
                   <button
                     onClick={() => {
                       fileInputRef.current?.click();
                       setShowFileMenu(false);
                     }}
-                    className="w-full text-left px-3 py-1.5 hover:bg-amber-50 hover:text-amber-700 flex items-center justify-between"
+                    className="w-full text-left px-3 py-1.5 hover:bg-purple-50 hover:text-purple-700 flex items-center justify-between"
                   >
-                    <span className="flex items-center gap-1.5">
-                      <FileUp size={13} className="text-emerald-600" />
-                      <span>打开本地文件 (.py / .json)...</span>
+                    <span className="flex items-center gap-2">
+                      <FolderOpen size={14} className="text-purple-600" />
+                      <span className="font-semibold">打开工程存档 (.cqproj.json)...</span>
                     </span>
-                    <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1 rounded font-mono">Open</span>
+                    <span className="text-[10px] bg-purple-100 text-purple-700 px-1 rounded font-mono">Open</span>
                   </button>
-                )}
-                <button
-                  onClick={() => {
-                    onExportStep();
-                    setShowFileMenu(false);
-                  }}
-                  className="w-full text-left px-3 py-1.5 hover:bg-amber-50 hover:text-amber-700 flex items-center justify-between"
-                >
-                  <span className="flex items-center gap-1.5">
-                    <Download size={13} className="text-teal-600" />
-                    <span>导出工业实体 (.step)</span>
-                  </span>
-                  <span className="text-[10px] bg-teal-100 text-teal-700 px-1 rounded font-mono">CAD</span>
-                </button>
-                {onOpenPrintChecker && (
+
+                  {/* 保存工程到浏览器本地缓存 */}
                   <button
                     onClick={() => {
-                      onOpenPrintChecker();
+                      onSave();
                       setShowFileMenu(false);
                     }}
                     className="w-full text-left px-3 py-1.5 hover:bg-amber-50 hover:text-amber-700 flex items-center justify-between"
                   >
-                    <span className="flex items-center gap-1.5">
-                      <Printer size={13} className="text-emerald-600" />
-                      <span>3D打印体检与流形评估</span>
+                    <span className="flex items-center gap-2">
+                      <Save size={14} className="text-amber-600" />
+                      <span>保存工程 (浏览器本地缓存)</span>
                     </span>
-                    <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1 rounded font-mono">Check</span>
+                    <span className="text-[10px] text-gray-400">Ctrl+S</span>
                   </button>
-                )}
-                <button
-                  onClick={() => {
-                    onExportStl();
-                    setShowFileMenu(false);
-                  }}
-                  className="w-full text-left px-3 py-1.5 hover:bg-amber-50 hover:text-amber-700 flex items-center justify-between"
-                >
-                  <span className="flex items-center gap-1.5">
-                    <Download size={13} className="text-cyan-600" />
-                    <span>导出3D打印网格 (.stl)</span>
-                  </span>
-                  <span className="text-[10px] bg-cyan-100 text-cyan-700 px-1 rounded font-mono">Mesh</span>
-                </button>
 
-                <div className="my-1 border-t border-gray-100" />
-
-                <div className="px-3 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                  精选教学案例模板
-                </div>
-                <div className="max-h-48 overflow-y-auto">
-                  {CAD_TEMPLATES.map((tpl) => (
+                  {onLoadSavedProject && (
                     <button
-                      key={tpl.id}
                       onClick={() => {
-                        onSelectTemplate(tpl);
+                        onLoadSavedProject();
                         setShowFileMenu(false);
                       }}
-                      className="w-full text-left px-3 py-1.5 hover:bg-amber-50 hover:text-amber-700 transition truncate"
+                      className="w-full text-left px-3 py-1.5 hover:bg-amber-50 hover:text-amber-700 flex items-center justify-between"
                     >
-                      {tpl.name}
+                      <span className="flex items-center gap-2">
+                        <FolderOpen size={14} className="text-amber-600" />
+                        <span>载入当前暂存 (浏览器本地缓存)</span>
+                      </span>
+                      <span className="text-[10px] bg-amber-100 text-amber-800 px-1 rounded font-mono">Load</span>
                     </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+                  )}
 
-          {/* 设置菜单 ⚙️ ▾ */}
-          <div className="relative">
-            <button
-              onClick={() => {
-                setShowSettingsMenu((prev) => !prev);
-                setShowFileMenu(false);
-                setShowHelpMenu(false);
-              }}
-              className={`px-1.5 py-1 rounded-md ${iconTextColor} ${iconHoverBg} font-bold text-xs flex items-center space-x-0.5 transition active:scale-95`}
-              title="设置菜单与主题配色"
-            >
-              <Settings size={15} className="stroke-[2.2]" />
-              <ChevronDown size={11} className="stroke-[2.5]" />
-            </button>
+                  {/* 最近打开的历史项目 (最近5条) */}
+                  {recentProjects.length > 0 && (
+                    <>
+                      <div className="my-1.5 border-t border-gray-100" />
+                      <div className="px-3 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center justify-between">
+                        <span>🕒 最近打开项目 (最近5条)</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            clearRecentProjects();
+                            setRecentProjects([]);
+                          }}
+                          className="text-[9px] text-gray-400 hover:text-rose-500 transition cursor-pointer"
+                          title="清空历史记录"
+                        >
+                          清空
+                        </button>
+                      </div>
+                      <div className="max-h-36 overflow-y-auto custom-scrollbar">
+                        {recentProjects.map((item) => (
+                          <button
+                            key={item.id}
+                            onClick={() => {
+                              if (onLoadProjectById) {
+                                onLoadProjectById(item.id);
+                              } else if (onLoadSavedProject) {
+                                onLoadSavedProject();
+                              }
+                              setShowFileMenu(false);
+                            }}
+                            className="w-full text-left px-3 py-1.5 hover:bg-emerald-50 hover:text-emerald-700 flex items-center justify-between transition group"
+                            title={`点击切换工程: ${item.name}`}
+                          >
+                            <div className="flex items-center gap-1.5 truncate">
+                              <Clock size={12} className="text-emerald-500 shrink-0" />
+                              <span className="truncate font-medium text-[11px]">{item.name}</span>
+                            </div>
+                            <span className="text-[9px] text-gray-400 group-hover:text-emerald-600 shrink-0 ml-1.5">
+                              {formatTimeAgo(item.updatedAt)}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
 
-            {showSettingsMenu && (
-              <div
-                className="absolute top-full left-0 mt-1.5 w-44 bg-white rounded-xl shadow-xl py-1.5 z-[250] text-xs border border-gray-100 text-gray-800 animate-fadeIn"
-                onMouseLeave={() => setShowSettingsMenu(false)}
-              >
-                <div className="px-3 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                  主题色彩
-                </div>
-                <div className="grid grid-cols-3 gap-1.5 px-3 py-1.5">
-                  {THEME_COLOR_OPTIONS.map((opt) => (
+                  <div className="my-1.5 border-t border-gray-100" />
+
+                  <div className="px-3 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                    导出与交付
+                  </div>
+
+                  {/* 导出 STEP */}
+                  <button
+                    onClick={() => {
+                      onExportStep();
+                      setShowFileMenu(false);
+                    }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-teal-50 hover:text-teal-700 flex items-center justify-between"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Download size={14} className="text-teal-600" />
+                      <span>导出工业实体 (.step)</span>
+                    </span>
+                    <span className="text-[10px] bg-teal-100 text-teal-700 px-1 rounded font-mono">STEP</span>
+                  </button>
+
+                  {/* 导出 STL */}
+                  <button
+                    onClick={() => {
+                      onExportStl();
+                      setShowFileMenu(false);
+                    }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-cyan-50 hover:text-cyan-700 flex items-center justify-between"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Download size={14} className="text-cyan-600" />
+                      <span>导出3D打印网格 (.stl)</span>
+                    </span>
+                    <span className="text-[10px] bg-cyan-100 text-cyan-700 px-1 rounded font-mono">STL</span>
+                  </button>
+
+                  {onOpenPrintChecker && (
                     <button
-                      key={opt.id}
                       onClick={() => {
-                        onSelectThemeColor(opt);
+                        onOpenPrintChecker();
+                        setShowFileMenu(false);
+                      }}
+                      className="w-full text-left px-3 py-1.5 hover:bg-emerald-50 hover:text-emerald-700 flex items-center justify-between"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Printer size={14} className="text-emerald-600" />
+                        <span>3D打印前置体检</span>
+                      </span>
+                      <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1 rounded font-mono">Check</span>
+                    </button>
+                  )}
+
+                  <div className="my-1.5 border-t border-gray-100" />
+
+                  <div className="px-3 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                    源码与存档
+                  </div>
+
+                  {onDownloadPy && (
+                    <button
+                      onClick={() => {
+                        onDownloadPy();
+                        setShowFileMenu(false);
+                      }}
+                      className="w-full text-left px-3 py-1.5 hover:bg-blue-50 hover:text-blue-700 flex items-center justify-between"
+                    >
+                      <span className="flex items-center gap-2">
+                        <FileCode size={14} className="text-blue-600" />
+                        <span>下载 Python 源码 (.py)</span>
+                      </span>
+                      <span className="text-[10px] bg-blue-100 text-blue-700 px-1 rounded font-mono">PY</span>
+                    </button>
+                  )}
+
+                  {onExportProject && (
+                    <button
+                      onClick={() => {
+                        onExportProject();
+                        setShowFileMenu(false);
+                      }}
+                      className="w-full text-left px-3 py-1.5 hover:bg-purple-50 hover:text-purple-700 flex items-center justify-between"
+                    >
+                      <span className="flex items-center gap-2">
+                        <FileDown size={14} className="text-purple-600" />
+                        <span>导出完整工程存档 (.cqproj.json)</span>
+                      </span>
+                      <span className="text-[10px] bg-purple-100 text-purple-700 px-1 rounded font-mono">Zip</span>
+                    </button>
+                  )}
+
+                  <div className="my-1.5 border-t border-gray-100" />
+
+                  <div className="px-3 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                    精选教学案例模板
+                  </div>
+                  <div className="max-h-40 overflow-y-auto">
+                    {CAD_TEMPLATES.map((tpl) => (
+                      <button
+                        key={tpl.id}
+                        onClick={() => {
+                          onSelectTemplate(tpl);
+                          setShowFileMenu(false);
+                        }}
+                        className="w-full text-left px-3 py-1.5 hover:bg-amber-50 hover:text-amber-700 transition truncate"
+                      >
+                        {tpl.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 设置菜单 ⚙️ ▾ */}
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setShowSettingsMenu((prev) => !prev);
+                  setShowFileMenu(false);
+                  setShowHelpMenu(false);
+                }}
+                className={`px-2 py-1.5 rounded-lg ${iconTextColor} ${iconHoverBg} font-bold text-xs flex items-center space-x-1 transition active:scale-95`}
+                title="设置菜单与主题配色"
+              >
+                <Settings size={16} className="stroke-[2.2]" />
+                <span className="hidden sm:inline">设置</span>
+                <ChevronDown size={12} className="stroke-[2.5]" />
+              </button>
+
+              {showSettingsMenu && (
+                <div
+                  className="absolute top-full left-0 mt-1.5 w-48 bg-white rounded-2xl shadow-2xl py-2 z-[250] text-xs border border-gray-100 text-gray-800 animate-fadeIn"
+                  onMouseLeave={() => setShowSettingsMenu(false)}
+                >
+                  <div className="px-3 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                    主题色彩
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5 px-3 py-1.5">
+                    {THEME_COLOR_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.id}
+                        onClick={() => {
+                          onSelectThemeColor(opt);
+                          setShowSettingsMenu(false);
+                        }}
+                        title={opt.name}
+                        className="w-7 h-7 rounded-lg flex items-center justify-center border border-black/10 hover:scale-110 transition shadow-xs"
+                        style={{ backgroundColor: opt.color }}
+                      >
+                        {settings.themeColor.toLowerCase() === opt.color.toLowerCase() && (
+                          <Check size={12} className={opt.isLight ? "text-gray-900" : "text-white"} />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="my-1.5 border-t border-gray-100" />
+
+                  {onUpdateSettings && (
+                    <button
+                      onClick={() => {
+                        const nextMode = settings.colorMode === "light" ? "dark" : "light";
+                        onUpdateSettings({ ...settings, colorMode: nextMode });
                         setShowSettingsMenu(false);
                       }}
-                      title={opt.name}
-                      className="w-7 h-7 rounded-lg flex items-center justify-center border border-black/10 hover:scale-110 transition shadow-xs"
-                      style={{ backgroundColor: opt.color }}
+                      className="w-full text-left px-3 py-1.5 hover:bg-emerald-50 hover:text-emerald-700 flex items-center justify-between transition-colors"
                     >
-                      {settings.themeColor.toLowerCase() === opt.color.toLowerCase() && (
-                        <Check size={12} className={opt.isLight ? "text-gray-900" : "text-white"} />
-                      )}
+                      <span className="flex items-center gap-1.5">
+                        {settings.colorMode === "light" ? (
+                          <Moon size={13} className="text-indigo-500" />
+                        ) : (
+                          <Sun size={13} className="text-amber-500" />
+                        )}
+                        <span>{settings.colorMode === "light" ? "切换至深色黑夜" : "切换至浅色白天"}</span>
+                      </span>
+                      <span className="text-[10px] text-gray-400 font-mono">
+                        {settings.colorMode === "light" ? "Dark" : "Light"}
+                      </span>
                     </button>
-                  ))}
-                </div>
+                  )}
 
-                <div className="my-1 border-t border-gray-100" />
-
-                {onUpdateSettings && (
                   <button
                     onClick={() => {
-                      const nextMode = settings.colorMode === "light" ? "dark" : "light";
-                      onUpdateSettings({ ...settings, colorMode: nextMode });
+                      onOpenSettings();
                       setShowSettingsMenu(false);
                     }}
-                    className="w-full text-left px-3 py-1.5 hover:bg-emerald-50 hover:text-emerald-700 flex items-center justify-between transition-colors"
+                    className="w-full text-left px-3 py-1.5 hover:bg-amber-50 hover:text-amber-700 flex items-center justify-between"
                   >
-                    <span className="flex items-center gap-1.5">
-                      {settings.colorMode === "light" ? (
-                        <Moon size={13} className="text-indigo-500" />
-                      ) : (
-                        <Sun size={13} className="text-amber-500" />
-                      )}
-                      <span>{settings.colorMode === "light" ? "切换至深色黑夜" : "切换至浅色白天"}</span>
-                    </span>
-                    <span className="text-[10px] text-gray-400 font-mono">
-                      {settings.colorMode === "light" ? "Dark" : "Light"}
-                    </span>
+                    <span>编辑器高级偏好</span>
+                    <Settings size={12} className="text-gray-400" />
                   </button>
-                )}
+                </div>
+              )}
+            </div>
 
-                <button
-                  onClick={() => {
-                    onOpenSettings();
-                    setShowSettingsMenu(false);
-                  }}
-                  className="w-full text-left px-3 py-1.5 hover:bg-amber-50 hover:text-amber-700 flex items-center justify-between"
-                >
-                  <span>编辑器高级偏好</span>
-                  <Settings size={12} className="text-gray-400" />
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* 帮助菜单 ❓ ▾ */}
-          <div className="relative">
-            <button
-              onClick={() => {
-                setShowHelpMenu((prev) => !prev);
-                setShowFileMenu(false);
-                setShowSettingsMenu(false);
-              }}
-              className={`px-1.5 py-1 rounded-md ${iconTextColor} ${iconHoverBg} font-bold text-xs flex items-center space-x-0.5 transition active:scale-95`}
-              title="帮助中心与启发式关卡"
-            >
-              <HelpCircle size={15} className="stroke-[2.2]" />
-              <ChevronDown size={11} className="stroke-[2.5]" />
-            </button>
-
-            {showHelpMenu && (
-              <div
-                className="absolute top-full left-0 mt-1.5 w-44 bg-white rounded-xl shadow-xl py-1.5 z-[250] text-xs border border-gray-100 text-gray-800 animate-fadeIn"
-                onMouseLeave={() => setShowHelpMenu(false)}
+            {/* 帮助菜单 ❓ ▾ */}
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setShowHelpMenu((prev) => !prev);
+                  setShowFileMenu(false);
+                  setShowSettingsMenu(false);
+                }}
+                className={`px-2 py-1.5 rounded-lg ${iconTextColor} ${iconHoverBg} font-bold text-xs flex items-center space-x-1 transition active:scale-95`}
+                title="帮助中心与挑战关卡"
               >
-                <button
-                  onClick={() => {
-                    setShowHelp(true);
-                    setShowHelpMenu(false);
-                  }}
-                  className="w-full text-left px-3 py-1.5 hover:bg-amber-50 hover:text-amber-700 flex items-center justify-between"
-                >
-                  <span> 帮助中心</span>
-                  <HelpCircle size={12} className="text-amber-500" />
-                </button>
+                <HelpCircle size={16} className="stroke-[2.2]" />
+                <span className="hidden sm:inline">帮助</span>
+                <ChevronDown size={12} className="stroke-[2.5]" />
+              </button>
 
-                {onOpenMissions && (
+              {showHelpMenu && (
+                <div
+                  className="absolute top-full left-0 mt-1.5 w-44 bg-white rounded-2xl shadow-2xl py-2 z-[250] text-xs border border-gray-100 text-gray-800 animate-fadeIn"
+                  onMouseLeave={() => setShowHelpMenu(false)}
+                >
                   <button
                     onClick={() => {
-                      onOpenMissions();
+                      setShowHelp(true);
                       setShowHelpMenu(false);
                     }}
                     className="w-full text-left px-3 py-1.5 hover:bg-amber-50 hover:text-amber-700 flex items-center justify-between"
                   >
-                    <span>火星拓荒者挑战关卡</span>
-                    <Trophy size={12} className="text-amber-500" />
+                    <span>帮助中心</span>
+                    <HelpCircle size={12} className="text-amber-500" />
                   </button>
-                )}
-              </div>
-            )}
+
+                  {onOpenMissions && (
+                    <button
+                      onClick={() => {
+                        onOpenMissions();
+                        setShowHelpMenu(false);
+                      }}
+                      className="w-full text-left px-3 py-1.5 hover:bg-amber-50 hover:text-amber-700 flex items-center justify-between"
+                    >
+                      <span>火星拓荒者挑战关卡</span>
+                      <Trophy size={12} className="text-amber-500" />
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* 右侧垂直分隔条 */}
-          <div className={`h-4 w-[1.5px] ${dividerColor} mx-1`} />
-
-          {/* 代码/积木切换器 (二态模式：代码优先，可一键切换积木) */}
-          <div
-            className={`flex items-center rounded-lg p-0.5 ${switchContainerBg} shadow-inner transition-colors duration-200`}
-          >
-            <button
-              onClick={() => onViewModeChange("code")}
-              className={`flex items-center space-x-1 px-2.5 py-0.5 rounded-md font-bold text-xs transition active:scale-95 ${viewMode === "code" ? switchActiveBg : switchInactiveText
-                }`}
-              title="纯代码模式 (Python + 3D)"
+          {/* 模式选择器保留呼吸间隙 (ml-5 sm:ml-7)，积木模式在前，代码模式在后 [ ⊞ 积木 | </> 代码 ] */}
+          <div className="ml-5 sm:ml-7">
+            <div
+              className={`flex items-center rounded-xl p-0.5 ${switchContainerBg} shadow-inner transition-colors duration-200 border border-black/5`}
             >
-              <Code2 size={13} className="stroke-[2.4]" />
-              <span>代码</span>
-            </button>
-            <button
-              onClick={() => onViewModeChange("block")}
-              className={`flex items-center space-x-1 px-2.5 py-0.5 rounded-md font-bold text-xs transition active:scale-95 ${viewMode === "block" ? switchActiveBg : switchInactiveText
-                }`}
-              title="图形积木模式 (Blockly + 3D)"
-            >
-              <Blocks size={13} className="stroke-[2.4]" />
-              <span>积木</span>
-            </button>
+              <button
+                onClick={() => onViewModeChange("block")}
+                className={`flex items-center space-x-1.5 px-3 py-1 rounded-lg font-bold text-xs transition active:scale-95 ${viewMode === "block" ? switchActiveBg : switchInactiveText
+                  }`}
+                title="图形积木模式 (Blockly 3D)"
+              >
+                <Blocks size={14} className="stroke-[2.4]" />
+                <span>积木</span>
+              </button>
+              <button
+                onClick={() => onViewModeChange("code")}
+                className={`flex items-center space-x-1.5 px-3 py-1 rounded-lg font-bold text-xs transition active:scale-95 ${viewMode === "code" ? switchActiveBg : switchInactiveText
+                  }`}
+                title="纯代码模式 (Python + 3D)"
+              >
+                <Code2 size={14} className="stroke-[2.4]" />
+                <span>代码</span>
+              </button>
+            </div>
           </div>
         </div>
 
         {/* 中间：工程文件名输入框 */}
-        <div className="flex-1 max-w-xs mx-3">
+        <div className="flex-1 max-w-xs mx-4">
           <input
             type="text"
             value={projectName}
             onChange={(e) => onProjectNameChange(e.target.value)}
-            className={`w-full text-center font-bold text-xs px-2.5 py-1 rounded-md border focus:outline-hidden transition shadow-inner ${inputBg}`}
+            className={`w-full text-center font-bold text-xs px-3 py-1.5 rounded-lg border focus:outline-hidden transition shadow-inner ${inputBg}`}
             placeholder="项目名称..."
           />
         </div>
 
-        {/* 右侧：保存、分享、登录 */}
-        <div className="flex items-center space-x-2">
+        {/* 右侧：打印体检、保存、登录 (已删除分享按钮) */}
+        <div className="flex items-center space-x-2.5">
           {/* 3D 打印体检按钮 (LogoUp 3D 特色) */}
           {onOpenPrintChecker && (
             <button
               onClick={onOpenPrintChecker}
               title="3D 打印前置体检（流形检查、尺寸合规、耗材与工时估算）"
-              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs transition active:scale-95 flex items-center space-x-1"
+              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs transition active:scale-95 flex items-center space-x-1"
             >
-              <Printer size={13} />
+              <Printer size={14} />
               <span>打印体检</span>
             </button>
           )}
@@ -529,27 +639,18 @@ export const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
           <button
             onClick={onSave}
             title={isSaved ? "工程已保存 (Ctrl+S)" : "有未保存修改，点击保存 (Ctrl+S)"}
-            className="px-3.5 py-1 bg-[#FF8C1A] hover:bg-[#E67A10] text-white text-xs font-bold rounded-lg shadow-xs transition active:scale-95 flex items-center space-x-1.5"
+            className="px-4 py-1.5 bg-[#FF8C1A] hover:bg-[#E67A10] text-white text-xs font-bold rounded-lg shadow-xs transition active:scale-95 flex items-center space-x-1.5"
           >
-            <Save size={13} />
+            <Save size={14} />
             <span>保存</span>
             {!isSaved && <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />}
-          </button>
-
-          {/* 分享按钮 (海龟紫 #7869FF) */}
-          <button
-            onClick={handleShare}
-            title="分享作品"
-            className="px-3.5 py-1 bg-[#7869FF] hover:bg-[#6855FF] text-white text-xs font-bold rounded-lg shadow-xs transition active:scale-95"
-          >
-            分享
           </button>
 
           {/* 登录按钮 (琥珀金文本 #D97E00) */}
           <button
             onClick={handleLogin}
             title="登录 / 用户中心"
-            className={`px-1.5 py-1 ${iconTextColor} hover:opacity-80 font-bold text-xs transition active:scale-95 flex items-center`}
+            className={`px-2 py-1.5 ${iconTextColor} hover:opacity-80 font-bold text-xs transition active:scale-95 flex items-center`}
           >
             登录
           </button>
@@ -561,7 +662,7 @@ export const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
         type="file"
         ref={fileInputRef}
         onChange={handleFileSelected}
-        accept=".py,.json,.cq.json"
+        accept=".cqproj.json,.json,.cq.json,.py"
         className="hidden"
       />
 
@@ -570,14 +671,6 @@ export const HeaderToolbar: React.FC<HeaderToolbarProps> = ({
         <div className="fixed top-12 left-1/2 -translate-x-1/2 bg-emerald-700 text-white px-4 py-2 rounded-xl shadow-2xl text-xs font-semibold flex items-center gap-2 z-[350] animate-fadeIn border border-emerald-500/40">
           <Check size={14} className="text-emerald-200" />
           <span>{saveToastMsg}</span>
-        </div>
-      )}
-
-      {/* 分享成功微提示 Toast */}
-      {showShareToast && (
-        <div className="fixed top-12 right-6 bg-gray-900/90 text-white text-xs px-3 py-2 rounded-lg shadow-xl z-50 animate-fadeIn flex items-center space-x-1.5 backdrop-blur-sm">
-          <Sparkles size={14} className="text-amber-400" />
-          <span>作品链接已就绪，可随时分享给同学！</span>
         </div>
       )}
 

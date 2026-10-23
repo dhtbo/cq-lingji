@@ -520,8 +520,16 @@ def _is_geo_obj(val: Any) -> bool:
         return True
     if hasattr(val, "wrapped") and "TopoDS" in type(getattr(val, "wrapped")).__name__:
         return True
-    if cq is not None and isinstance(val, (cq.Workplane, cq.Shape, cq.Assembly)):
-        return True
+    if cq is not None:
+        if isinstance(val, cq.Workplane):
+            try:
+                if val.objects or val.findSolid() is not None:
+                    return True
+            except Exception:
+                pass
+            return False
+        if isinstance(val, (cq.Shape, cq.Assembly)):
+            return True
     return False
 
 
@@ -1182,8 +1190,12 @@ def execute_cq_sandboxed(
     except Exception as e:
         logger.debug(f"检查默认 LogoUp3D 模型失败: {e}")
 
-    # 如果是分步时间旅行回放模式，且当前语句仅为前置参数定义（尚未构建几何对象）
-    if step is not None:
+    # 如果是分步时间旅行回放模式，或者仅初始化了空白 Workplane / BuildPart / BuildSketch 而尚未添加图元
+    if step is not None or any(
+        (cq is not None and isinstance(v, cq.Workplane))
+        or isinstance(v, (b3d.BuildPart, b3d.BuildSketch, b3d.BuildLine))
+        for v in local_vars.values()
+    ):
         return None, steps, actual_step, captured_stdout
 
     # 优先级 4: 用户定义了自定义几何类（继承自 Compound / Part / Solid / Shape 等）但尚未实例化
