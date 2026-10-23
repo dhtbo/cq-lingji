@@ -41,11 +41,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get install -y --no-install-recommends nodejs \
     && apt-get clean && rm -rf /var/lib/apt/lists/* /root/.npm
 
-# Install Python backend dependencies (novtk version for minimal size and no vtk bloat)
+# Install Python backend dependencies (novtk minimal runtime without VTK bloat or NumPy 2 conflicts)
 COPY backend/requirements.txt /app/backend/requirements.txt
 RUN pip install --no-cache-dir -r /app/backend/requirements.txt \
-    && pip install --no-cache-dir --no-deps cadquery>=2.7.0 \
-    && find /usr/local/lib/python3.11 -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true \
+    && pip install --no-cache-dir --no-deps build123d==0.7.0 cadquery>=2.7.0 \
+    && (find /usr/local/lib/python3.11 -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true) \
     && rm -rf /root/.cache
 
 # Copy backend code
