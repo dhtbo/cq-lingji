@@ -343,8 +343,8 @@ function buildPendingWiresGroup(metadata: LogoUpCursorMetadata): THREE.Group {
     group.add(line);
   };
 
-  // 1. 仅当后端尚未生成 B-Rep 草图面或三维实体时，才兜底渲染待填充闭合线框 (pending_sketch_wires)
-  if (!metadata.has_sketch && !metadata.has_solids && metadata.pending_sketch_wires && metadata.pending_sketch_wires.length > 0) {
+  // 1. 渲染待填充闭合线框 (pending_sketch_wires)，无论是否已有实体，均作为当前端面草图高亮线框呈现 (严格对标图 1 效果)
+  if (metadata.pending_sketch_wires && metadata.pending_sketch_wires.length > 0) {
     for (const wirePts of metadata.pending_sketch_wires) {
       if (wirePts.length < 2) continue;
       const points = wirePts.map((p) => new THREE.Vector3(p[0], p[1], p[2]));

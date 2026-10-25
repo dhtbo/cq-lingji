@@ -544,17 +544,17 @@ export function registerLogoUp3DGenerator() {
 
   pythonGenerator.forBlock["logoup_rotatex"] = function (block) {
     const angle = block.getFieldValue("ANGLE");
-    return `pitch(${angle})\n`;
+    return `rotatex(${angle})\n`;
   };
 
   pythonGenerator.forBlock["logoup_rotatey"] = function (block) {
     const angle = block.getFieldValue("ANGLE");
-    return `roll(${angle})\n`;
+    return `rotatey(${angle})\n`;
   };
 
   pythonGenerator.forBlock["logoup_rotatez"] = function (block) {
     const angle = block.getFieldValue("ANGLE");
-    return `yaw(${angle})\n`;
+    return `rotatez(${angle})\n`;
   };
 
   pythonGenerator.forBlock["logoup_warpx"] = function (block) {

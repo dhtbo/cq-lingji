@@ -254,8 +254,10 @@ class LogoUp3D:
     def turn(self, deg: float) -> LogoUp3D:
         """顺时针旋转 (TURN) ↷ 指定角度 (度)"""
         angle = float(deg)
+        rot_axis = b3d.Axis(self.pos, self.up_dir)
         self.heading = _rot_vector(self.heading, self.up_dir, -angle).normalized()
         self.right = self.heading.cross(self.up_dir).normalized()
+        self._rotate_sketch(rot_axis, -angle)
         self.is_active = True
         return self
 
@@ -557,8 +559,15 @@ class LogoUp3D:
     def turnto(self, deg: float) -> LogoUp3D:
         """旋转到指定方位角 (TURNTO)"""
         base_h = Vector(0.0, 1.0, 0.0)
-        self.heading = _rot_vector(base_h, self.up_dir, -float(deg)).normalized()
+        target_h = _rot_vector(base_h, self.up_dir, -float(deg)).normalized()
+        c = max(-1.0, min(1.0, self.heading.dot(target_h)))
+        ang_rad = math.acos(c)
+        cross_z = self.heading.cross(target_h).dot(self.up_dir)
+        signed_deg = math.degrees(ang_rad) if cross_z >= 0 else -math.degrees(ang_rad)
+        rot_axis = b3d.Axis(self.pos, self.up_dir)
+        self.heading = target_h
         self.right = self.heading.cross(self.up_dir).normalized()
+        self._rotate_sketch(rot_axis, signed_deg)
         return self
 
     def setx(self, x: float) -> LogoUp3D:
@@ -833,6 +842,58 @@ class LogoUp3D:
                 except Exception:
                     pass
 
+    def _rotate_sketch(self, rot_axis: b3d.Axis, deg: float) -> None:
+        """随游标旋转同步旋转当前草图几何（面、实心面、空心面、线框等）"""
+        if abs(deg) < 1e-6:
+            return
+        if self.current_sketch_faces:
+            new_faces = []
+            for f in self.current_sketch_faces:
+                try:
+                    new_faces.append(f.rotate(rot_axis, deg))
+                except Exception:
+                    new_faces.append(f)
+            self.current_sketch_faces = new_faces
+
+        if self.last_sketch_face is not None:
+            try:
+                self.last_sketch_face = self.last_sketch_face.rotate(rot_axis, deg)
+            except Exception:
+                pass
+
+        if self.last_solid_face is not None:
+            try:
+                self.last_solid_face = self.last_solid_face.rotate(rot_axis, deg)
+            except Exception:
+                pass
+
+        if self.last_hollow_face is not None:
+            try:
+                self.last_hollow_face = self.last_hollow_face.rotate(rot_axis, deg)
+            except Exception:
+                pass
+
+        if hasattr(self, "last_inner_hole") and self.last_inner_hole is not None:
+            try:
+                self.last_inner_hole = self.last_inner_hole.rotate(rot_axis, deg)
+            except Exception:
+                pass
+
+        if self.pending_sketch_wires:
+            new_wires = []
+            for w in self.pending_sketch_wires:
+                try:
+                    new_wires.append(w.rotate(rot_axis, deg))
+                except Exception:
+                    new_wires.append(w)
+            self.pending_sketch_wires = new_wires
+
+        if self.last_sketch_wire is not None:
+            try:
+                self.last_sketch_wire = self.last_sketch_wire.rotate(rot_axis, deg)
+            except Exception:
+                pass
+
     def up(self, distance: float) -> LogoUp3D:
         """向上移动 (UP) [distance] 毫米 (沿当前天顶法向移动)"""
         d = float(distance)
@@ -863,9 +924,13 @@ class LogoUp3D:
     def body(self) -> LogoUp3D:
         """开始三维实体 (BODY)：将当前已有草图锚定为三维放样实体的起始底面截面"""
         self._body_sections = []
-        if self.last_sketch_face is not None:
-            self._body_sections.append(self.last_sketch_face)
-            self._prev_sketch_face = self.last_sketch_face
+        base_face = self.last_solid_face if self.last_solid_face is not None else self.last_sketch_face
+        if base_face is None and self.current_sketch_faces:
+            base_face = self.current_sketch_faces[-1]
+        if base_face is not None:
+            self._body_sections.append(base_face)
+            self._prev_sketch_face = base_face
+        self.is_active = True
         return self
 
     def color(self, color_name: str) -> LogoUp3D:
@@ -895,16 +960,38 @@ class LogoUp3D:
     def pitch(self, deg: float) -> LogoUp3D:
         """俯仰角度摆动 (PITCH) [deg] 度 (绕横轴 right 俯仰)"""
         angle = float(deg)
+        rot_axis = b3d.Axis(self.pos, self.right)
         self.heading = _rot_vector(self.heading, self.right, angle).normalized()
         self.up_dir = self.right.cross(self.heading).normalized()
+        self._rotate_sketch(rot_axis, angle)
         self.is_active = True
         return self
 
     def roll(self, deg: float) -> LogoUp3D:
         """绕自身旋转 (ROLL) [deg] 度 (绕 heading 轴滚转)"""
         angle = float(deg)
+        rot_axis = b3d.Axis(self.pos, self.heading)
         self.up_dir = _rot_vector(self.up_dir, self.heading, angle).normalized()
         self.right = self.heading.cross(self.up_dir).normalized()
+        self._rotate_sketch(rot_axis, angle)
+        self.is_active = True
+        return self
+
+    def rotatex(self, deg: float) -> LogoUp3D:
+        """按草图 x 轴旋转 (ROTATEX) [deg] 度 (绕草图局部 X 轴旋转)"""
+        return self.pitch(deg)
+
+    def rotatey(self, deg: float) -> LogoUp3D:
+        """按草图 y 轴旋转 (ROTATEY) [deg] 度 (绕草图局部 Y 轴旋转)"""
+        return self.roll(deg)
+
+    def rotatez(self, deg: float) -> LogoUp3D:
+        """按草图 z 轴旋转 (ROTATEZ) [deg] 度 (绕草图局部 Z 轴旋转，逆时针为正)"""
+        angle = float(deg)
+        rot_axis = b3d.Axis(self.pos, self.up_dir)
+        self.heading = _rot_vector(self.heading, self.up_dir, angle).normalized()
+        self.right = self.heading.cross(self.up_dir).normalized()
+        self._rotate_sketch(rot_axis, angle)
         self.is_active = True
         return self
 
@@ -1188,7 +1275,7 @@ class LogoUp3D:
 
     def link(self) -> LogoUp3D:
         """连接形状到当前草图 (LINK)：平滑放样连接上一草图截面与当前草图截面成三维实体"""
-        curr_face = self.last_sketch_face
+        curr_face = self.last_solid_face if self.last_solid_face is not None else self.last_sketch_face
         if curr_face is None and self.current_sketch_faces:
             curr_face = self.current_sketch_faces[-1]
 
@@ -1199,13 +1286,19 @@ class LogoUp3D:
             prev_face = self._prev_sketch_face
 
         if prev_face is not None and curr_face is not None and prev_face is not curr_face:
+            loft_solid = None
             try:
                 loft_solid = b3d.loft([prev_face, curr_face])
+            except Exception as e1:
+                try:
+                    loft_solid = b3d.loft([prev_face, curr_face], ruled=True)
+                except Exception as e2:
+                    logger.warning(f"link 放样失败: {e1}, {e2}")
+
+            if loft_solid is not None:
                 self._integrate_solid(loft_solid)
                 self._body_sections.append(curr_face)
                 self._prev_sketch_face = curr_face
-            except Exception as e:
-                logger.warning(f"link 放样失败: {e}")
         elif prev_face is None and curr_face is not None:
             self._body_sections.append(curr_face)
             self._prev_sketch_face = curr_face
@@ -1544,6 +1637,15 @@ def pitch(deg: float) -> LogoUp3D:
 
 def roll(deg: float) -> LogoUp3D:
     return _DEFAULT_LOGOUP.roll(deg)
+
+def rotatex(deg: float) -> LogoUp3D:
+    return _DEFAULT_LOGOUP.rotatex(deg)
+
+def rotatey(deg: float) -> LogoUp3D:
+    return _DEFAULT_LOGOUP.rotatey(deg)
+
+def rotatez(deg: float) -> LogoUp3D:
+    return _DEFAULT_LOGOUP.rotatez(deg)
 
 def move(dx: float, dy: float, dz: float) -> LogoUp3D:
     return _DEFAULT_LOGOUP.move(dx, dy, dz)
