@@ -12,7 +12,7 @@ RUN npm ci || npm install
 
 # Copy frontend source and build standalone bundle
 COPY frontend/ ./
-RUN npm run build
+RUN npm run build && rm -rf .next/cache
 
 # ==========================================
 # Stage 2: Production Runtime
@@ -46,6 +46,8 @@ COPY backend/requirements.txt /app/backend/requirements.txt
 RUN pip install --no-cache-dir -r /app/backend/requirements.txt \
     && pip install --no-cache-dir --no-deps cadquery>=2.7.0 \
     && find /usr/local/lib/python3.11 -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true \
+    && find /usr/local/lib/python3.11 -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true \
+    && find /usr/local/lib/python3.11 -type d -name "test" -exec rm -rf {} + 2>/dev/null || true \
     && rm -rf /root/.cache
 
 # Copy backend code
