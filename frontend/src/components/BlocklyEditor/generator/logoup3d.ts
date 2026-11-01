@@ -70,6 +70,21 @@ export function registerLogoUp3DGenerator() {
     return `${varName} = ${val}\n`;
   };
 
+  pythonGenerator.forBlock["logoup_call_var"] = function (block) {
+    const varName = block.getFieldValue("VAR") || "x";
+    return [varName, Order.ATOMIC];
+  };
+
+  pythonGenerator.forBlock["logoup_get_var"] = function (block) {
+    const varName = block.getFieldValue("VAR") || "x";
+    return [varName, Order.ATOMIC];
+  };
+
+  pythonGenerator.forBlock["logoup_var"] = function (block) {
+    const varName = block.getFieldValue("VAR") || "x";
+    return [varName, Order.ATOMIC];
+  };
+
   pythonGenerator.forBlock["logoup_return_val"] = function (block) {
     const val = pythonGenerator.valueToCode(block, "VALUE", Order.NONE) || "None";
     return `return ${val}\n`;

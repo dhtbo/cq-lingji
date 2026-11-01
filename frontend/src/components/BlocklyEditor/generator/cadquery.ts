@@ -349,6 +349,21 @@ export function registerCadQueryGenerator() {
     return code;
   };
 
+  pythonGenerator.forBlock["logoup_call_var"] = function (block: Blockly.Block) {
+    const v = (block.getFieldValue("VAR") || "x").toString().trim();
+    return [v, Order.ATOMIC];
+  };
+
+  pythonGenerator.forBlock["logoup_get_var"] = function (block: Blockly.Block) {
+    const v = (block.getFieldValue("VAR") || "x").toString().trim();
+    return [v, Order.ATOMIC];
+  };
+
+  pythonGenerator.forBlock["b3d_var_get"] = function (block: Blockly.Block) {
+    const v = (block.getFieldValue("VAR") || "x").toString().trim();
+    return [v, Order.ATOMIC];
+  };
+
 }
 
 /**

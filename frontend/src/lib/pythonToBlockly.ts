@@ -23,7 +23,7 @@ export interface ParsedBlockDef {
  * - 四则运算 +, -, *, /, ** -> math_arithmetic
  * - 嵌套括号 (a + b) / 2
  */
-export function parseExprToBlockDef(expr: string): ParsedBlockDef | null {
+export function parseExprToBlockDef(expr: string, mode?: WorkingMode): ParsedBlockDef | null {
   if (!expr) return null;
   let s = expr.trim();
   if (!s) return null;
@@ -64,7 +64,7 @@ export function parseExprToBlockDef(expr: string): ParsedBlockDef | null {
 
   // 3. 逻辑非 (not ...)
   if (s.startsWith("not ") && s.length > 4) {
-    const subDef = parseExprToBlockDef(s.slice(4).trim());
+    const subDef = parseExprToBlockDef(s.slice(4).trim(), mode);
     if (subDef) {
       return {
         type: "logoup_not",
@@ -100,7 +100,7 @@ export function parseExprToBlockDef(expr: string): ParsedBlockDef | null {
   // 5. 纯合法 Python 标识符 (变量引用)
   if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(s)) {
     return {
-      type: "b3d_var_get",
+      type: mode === "logoup" ? "logoup_call_var" : "b3d_var_get",
       fields: { VAR: s },
     };
   }
@@ -150,8 +150,8 @@ export function parseExprToBlockDef(expr: string): ParsedBlockDef | null {
             if (i >= opLen - 1 && s.slice(i - opLen + 1, i + 1) === op) {
               const leftStr = s.slice(0, i - opLen + 1).trim();
               const rightStr = s.slice(i + 1).trim();
-              const leftDef = parseExprToBlockDef(leftStr);
-              const rightDef = parseExprToBlockDef(rightStr);
+              const leftDef = parseExprToBlockDef(leftStr, mode);
+              const rightDef = parseExprToBlockDef(rightStr, mode);
               if (leftDef && rightDef) {
                 return {
                   type: blockType,
@@ -164,8 +164,8 @@ export function parseExprToBlockDef(expr: string): ParsedBlockDef | null {
             if (s.slice(i, i + 2) === "**") {
               const leftStr = s.slice(0, i).trim();
               const rightStr = s.slice(i + 2).trim();
-              const leftDef = parseExprToBlockDef(leftStr);
-              const rightDef = parseExprToBlockDef(rightStr);
+              const leftDef = parseExprToBlockDef(leftStr, mode);
+              const rightDef = parseExprToBlockDef(rightStr, mode);
               if (leftDef && rightDef) {
                 return {
                   type: blockType,
@@ -181,8 +181,8 @@ export function parseExprToBlockDef(expr: string): ParsedBlockDef | null {
             // 双字符操作符如 ==, !=, <=, >=
             const leftStr = s.slice(0, i - 1).trim();
             const rightStr = s.slice(i + 1).trim();
-            const leftDef = parseExprToBlockDef(leftStr);
-            const rightDef = parseExprToBlockDef(rightStr);
+            const leftDef = parseExprToBlockDef(leftStr, mode);
+            const rightDef = parseExprToBlockDef(rightStr, mode);
             if (leftDef && rightDef) {
               return {
                 type: blockType,
@@ -208,8 +208,8 @@ export function parseExprToBlockDef(expr: string): ParsedBlockDef | null {
             const leftStr = s.slice(0, i).trim();
             const rightStr = s.slice(i + 1).trim();
             if (leftStr && rightStr) {
-              const leftDef = parseExprToBlockDef(leftStr);
-              const rightDef = parseExprToBlockDef(rightStr);
+              const leftDef = parseExprToBlockDef(leftStr, mode);
+              const rightDef = parseExprToBlockDef(rightStr, mode);
               if (leftDef && rightDef) {
                 return {
                   type: blockType,
@@ -462,7 +462,8 @@ function parseSharedControlStatement(
   indent: number,
   stack: ContainerStackEntry[],
   addBlock: (b: ParsedBlockDef) => void,
-  getCurrentList: () => ParsedBlockDef[]
+  getCurrentList: () => ParsedBlockDef[],
+  mode?: WorkingMode
 ): boolean {
   // 1. 开始帽子积木注释跳过（由顶层统一冠名唯一 logoup_start）
   if (trimmed.startsWith("# 🏁 开始")) {
@@ -473,7 +474,7 @@ function parseSharedControlStatement(
   const repeatMatch = trimmed.match(/^for\s+(?:_|[a-zA-Z_]\w*)\s+in\s+range\((.*?)\)\s*:/);
   if (repeatMatch) {
     const timesExpr = repeatMatch[1].trim();
-    const valDef = parseExprToBlockDef(timesExpr) || { type: "math_number", fields: { NUM: 4 } };
+    const valDef = parseExprToBlockDef(timesExpr, mode) || { type: "math_number", fields: { NUM: 4 } };
     const block: ParsedBlockDef = {
       type: "logoup_repeat",
       fields: {},
@@ -489,7 +490,7 @@ function parseSharedControlStatement(
   const ifMatch = trimmed.match(/^if\s+(.*?)\s*:/);
   if (ifMatch && !trimmed.startsWith("if __name__")) {
     const condExpr = ifMatch[1].trim();
-    const condDef = parseExprToBlockDef(condExpr);
+    const condDef = parseExprToBlockDef(condExpr, mode);
     const block: ParsedBlockDef = {
       type: "logoup_if",
       fields: {},
@@ -535,7 +536,7 @@ function parseSharedControlStatement(
   }
   const returnValMatch = trimmed.match(/^return\s+(.+)$/);
   if (returnValMatch) {
-    const valDef = parseExprToBlockDef(returnValMatch[1].trim());
+    const valDef = parseExprToBlockDef(returnValMatch[1].trim(), mode);
     addBlock({
       type: "logoup_return_val",
       fields: {},
@@ -558,7 +559,7 @@ function parseLogoUpStatement(
   addBlock: (b: ParsedBlockDef) => void,
   getCurrentList: () => ParsedBlockDef[]
 ): boolean {
-  if (parseSharedControlStatement(trimmed, indent, stack, addBlock, getCurrentList)) {
+  if (parseSharedControlStatement(trimmed, indent, stack, addBlock, getCurrentList, "logoup")) {
     return true;
   }
 
@@ -1237,7 +1238,7 @@ function parseLogoUpStatement(
   if (assign) {
     const varName = assign.lhs.trim();
     if (/^[a-zA-Z_]\w*$/.test(varName)) {
-      const valDef = parseExprToBlockDef(assign.rhs.trim());
+      const valDef = parseExprToBlockDef(assign.rhs.trim(), "logoup");
       addBlock({
         type: "logoup_set_var",
         fields: { VAR: varName },
@@ -3280,7 +3281,15 @@ function buildValueBlock(
   workspace: Blockly.WorkspaceSvg,
   valDef: ParsedBlockDef
 ): { block: Blockly.BlockSvg; count: number } {
-  const block = workspace.newBlock(valDef.type) as Blockly.BlockSvg;
+  let blockType = valDef.type;
+  if (!Blockly.Blocks[blockType]) {
+    if ((blockType === "b3d_var_get" || blockType === "logoup_get_var" || blockType === "logoup_var") && Blockly.Blocks["logoup_call_var"]) {
+      blockType = "logoup_call_var";
+    } else if (blockType === "logoup_call_var" && Blockly.Blocks["b3d_var_get"]) {
+      blockType = "b3d_var_get";
+    }
+  }
+  const block = workspace.newBlock(blockType) as Blockly.BlockSvg;
   for (const [k, v] of Object.entries(valDef.fields)) {
     if (block.getField(k)) {
       block.setFieldValue(v as any, k);

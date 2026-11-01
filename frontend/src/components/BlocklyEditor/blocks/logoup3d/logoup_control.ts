@@ -170,6 +170,40 @@ export function registerLogoUpControlBlocks() {
     },
   };
 
+  // 11.5 调用变量 (获取/使用变量值)
+  Blockly.Blocks["logoup_call_var"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("调用变量")
+        .appendField(new Blockly.FieldTextInput("x"), "VAR");
+      this.setOutput(true, null);
+      this.setColour(LOGOUP_COLORS.CONTROL);
+      this.setTooltip("调用已定义的变量值 (可插入重复次数、数学计算或参数插槽中)");
+    },
+  };
+
+  Blockly.Blocks["logoup_get_var"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("调用变量")
+        .appendField(new Blockly.FieldTextInput("x"), "VAR");
+      this.setOutput(true, null);
+      this.setColour(LOGOUP_COLORS.CONTROL);
+      this.setTooltip("调用已定义的变量值 (可插入重复次数、数学计算或参数插槽中)");
+    },
+  };
+
+  Blockly.Blocks["logoup_var"] = {
+    init: function () {
+      this.appendDummyInput()
+        .appendField("变量")
+        .appendField(new Blockly.FieldTextInput("x"), "VAR");
+      this.setOutput(true, null);
+      this.setColour(LOGOUP_COLORS.CONTROL);
+      this.setTooltip("引用已定义的变量值");
+    },
+  };
+
   // 12. 返回 表达式
   Blockly.Blocks["logoup_return_val"] = {
     init: function () {

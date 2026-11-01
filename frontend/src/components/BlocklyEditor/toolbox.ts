@@ -54,6 +54,11 @@ const LOGOUP_CONTROL_CATEGORY = {
     },
     {
       kind: "block",
+      type: "logoup_call_var",
+      fields: { VAR: "x" },
+    },
+    {
+      kind: "block",
       type: "logoup_return_val",
       inputs: {
         VALUE: {

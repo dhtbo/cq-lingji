@@ -140,6 +140,16 @@ export function registerBuild123dGenerator() {
     return [v, Order.ATOMIC];
   };
 
+  pythonGenerator.forBlock["logoup_call_var"] = function (block: Blockly.Block) {
+    const v = (block.getFieldValue("VAR") || "x").toString().trim();
+    return [v, Order.ATOMIC];
+  };
+
+  pythonGenerator.forBlock["logoup_get_var"] = function (block: Blockly.Block) {
+    const v = (block.getFieldValue("VAR") || "x").toString().trim();
+    return [v, Order.ATOMIC];
+  };
+
   pythonGenerator.forBlock["math_number"] = function (block: Blockly.Block) {
     const code = Number(block.getFieldValue("NUM"));
     return [String(isNaN(code) ? "0" : code), Order.ATOMIC];
