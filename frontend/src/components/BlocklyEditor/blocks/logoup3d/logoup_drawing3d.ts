@@ -3,19 +3,20 @@ import { LOGOUP_COLORS } from "../types";
 
 /**
  * LogoUp 3D 三维绘图积木 (3D Drawing & Cursor Control)
+ * 支持通过 ValueInput 接入变量、数学计算或数值阴影块
  */
 export function registerLogoUpDrawing3DBlocks() {
   // 1. 向上移动 (UP)
   Blockly.Blocks["logoup_up"] = {
     init: function () {
-      this.appendDummyInput()
-        .appendField("向上移动 (UP)")
-        .appendField(new Blockly.FieldNumber(10), "DISTANCE")
-        .appendField("毫米");
+      this.appendDummyInput().appendField("向上移动 (UP)");
+      this.appendValueInput("DISTANCE").setCheck(null).appendField("距离");
+      this.appendDummyInput().appendField("毫米");
+      this.setInputsInline(true);
       this.setPreviousStatement(true, null);
       this.setNextStatement(true, null);
       this.setColour(LOGOUP_COLORS.DRAWING_3D);
-      this.setTooltip("沿当前草图平面的垂直法向 (Z轴) 向上移动游标");
+      this.setTooltip("沿当前草图平面的垂直法向 (Z轴) 向上移动游标 (支持变量或数值)");
     },
   };
 
@@ -82,24 +83,24 @@ export function registerLogoUpDrawing3DBlocks() {
   // 6. 草图缩放至 (SCALE)
   Blockly.Blocks["logoup_scale"] = {
     init: function () {
-      this.appendDummyInput()
-        .appendField("草图缩放至 (SCALE)")
-        .appendField(new Blockly.FieldNumber(1.5, 0.01), "FACTOR")
-        .appendField("倍");
+      this.appendDummyInput().appendField("草图缩放至 (SCALE)");
+      this.appendValueInput("FACTOR").setCheck(null).appendField("比例");
+      this.appendDummyInput().appendField("倍");
+      this.setInputsInline(true);
       this.setPreviousStatement(true, null);
       this.setNextStatement(true, null);
       this.setColour(LOGOUP_COLORS.DRAWING_3D);
-      this.setTooltip("按指定比例缩放当前工作平面的草图截面");
+      this.setTooltip("按指定比例缩放当前工作平面的草图截面 (支持变量或数值)");
     },
   };
 
   // 7. 水平方向摆动 (YAW)
   Blockly.Blocks["logoup_yaw"] = {
     init: function () {
-      this.appendDummyInput()
-        .appendField("水平方向摆动 (YAW)")
-        .appendField(new Blockly.FieldNumber(15, -360, 360), "ANGLE")
-        .appendField("度");
+      this.appendDummyInput().appendField("水平方向摆动 (YAW)");
+      this.appendValueInput("ANGLE").setCheck(null).appendField("偏转");
+      this.appendDummyInput().appendField("度");
+      this.setInputsInline(true);
       this.setPreviousStatement(true, null);
       this.setNextStatement(true, null);
       this.setColour(LOGOUP_COLORS.DRAWING_3D);
@@ -110,10 +111,10 @@ export function registerLogoUpDrawing3DBlocks() {
   // 8. 俯仰角度摆动 (PITCH)
   Blockly.Blocks["logoup_pitch"] = {
     init: function () {
-      this.appendDummyInput()
-        .appendField("俯仰角度摆动 (PITCH)")
-        .appendField(new Blockly.FieldNumber(15, -360, 360), "ANGLE")
-        .appendField("度");
+      this.appendDummyInput().appendField("俯仰角度摆动 (PITCH)");
+      this.appendValueInput("ANGLE").setCheck(null).appendField("偏转");
+      this.appendDummyInput().appendField("度");
+      this.setInputsInline(true);
       this.setPreviousStatement(true, null);
       this.setNextStatement(true, null);
       this.setColour(LOGOUP_COLORS.DRAWING_3D);
@@ -124,10 +125,10 @@ export function registerLogoUpDrawing3DBlocks() {
   // 9. 绕自身旋转 (ROLL)
   Blockly.Blocks["logoup_roll"] = {
     init: function () {
-      this.appendDummyInput()
-        .appendField("绕自身旋转 (ROLL)")
-        .appendField(new Blockly.FieldNumber(15, -360, 360), "ANGLE")
-        .appendField("度");
+      this.appendDummyInput().appendField("绕自身旋转 (ROLL)");
+      this.appendValueInput("ANGLE").setCheck(null).appendField("偏转");
+      this.appendDummyInput().appendField("度");
+      this.setInputsInline(true);
       this.setPreviousStatement(true, null);
       this.setNextStatement(true, null);
       this.setColour(LOGOUP_COLORS.DRAWING_3D);
@@ -138,10 +139,10 @@ export function registerLogoUpDrawing3DBlocks() {
   // 10. 向上跳跃 (JUMP)
   Blockly.Blocks["logoup_jump"] = {
     init: function () {
-      this.appendDummyInput()
-        .appendField("向上跳跃 (JUMP)")
-        .appendField(new Blockly.FieldNumber(10), "DISTANCE")
-        .appendField("毫米");
+      this.appendDummyInput().appendField("向上跳跃 (JUMP)");
+      this.appendValueInput("DISTANCE").setCheck(null).appendField("距离");
+      this.appendDummyInput().appendField("毫米");
+      this.setInputsInline(true);
       this.setPreviousStatement(true, null);
       this.setNextStatement(true, null);
       this.setColour(LOGOUP_COLORS.DRAWING_3D);
@@ -164,14 +165,12 @@ export function registerLogoUpDrawing3DBlocks() {
   // 12. 三维游标坐标增加 (MOVE)
   Blockly.Blocks["logoup_move"] = {
     init: function () {
-      this.appendDummyInput()
-        .appendField("三维游标坐标增加 (MOVE)")
-        .appendField(new Blockly.FieldNumber(10), "DX")
-        .appendField(",")
-        .appendField(new Blockly.FieldNumber(10), "DY")
-        .appendField(",")
-        .appendField(new Blockly.FieldNumber(10), "DZ")
-        .appendField("毫米");
+      this.appendDummyInput().appendField("三维游标坐标增加 (MOVE)");
+      this.appendValueInput("DX").setCheck(null).appendField("DX");
+      this.appendValueInput("DY").setCheck(null).appendField("DY");
+      this.appendValueInput("DZ").setCheck(null).appendField("DZ");
+      this.appendDummyInput().appendField("毫米");
+      this.setInputsInline(true);
       this.setPreviousStatement(true, null);
       this.setNextStatement(true, null);
       this.setColour(LOGOUP_COLORS.DRAWING_3D);
@@ -182,12 +181,11 @@ export function registerLogoUpDrawing3DBlocks() {
   // 13. 草平面平移 (SHIFT)
   Blockly.Blocks["logoup_shift"] = {
     init: function () {
-      this.appendDummyInput()
-        .appendField("草平面平移 (SHIFT)")
-        .appendField(new Blockly.FieldNumber(10), "DX")
-        .appendField(",")
-        .appendField(new Blockly.FieldNumber(10), "DY")
-        .appendField("毫米");
+      this.appendDummyInput().appendField("草平面平移 (SHIFT)");
+      this.appendValueInput("DX").setCheck(null).appendField("DX");
+      this.appendValueInput("DY").setCheck(null).appendField("DY");
+      this.appendDummyInput().appendField("毫米");
+      this.setInputsInline(true);
       this.setPreviousStatement(true, null);
       this.setNextStatement(true, null);
       this.setColour(LOGOUP_COLORS.DRAWING_3D);

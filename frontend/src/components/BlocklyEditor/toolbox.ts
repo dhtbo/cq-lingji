@@ -187,13 +187,37 @@ const LOGOUP_SPECIFIC_CATEGORIES = [
     name: "🎨 平面绘图",
     colour: LOGOUP_COLORS.DRAWING_2D,
     contents: [
-      { kind: "block", type: "logoup_go" },
-      { kind: "block", type: "logoup_turn" },
-      { kind: "block", type: "logoup_turn_left" },
+      {
+        kind: "block",
+        type: "logoup_go",
+        inputs: {
+          DISTANCE: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_turn",
+        inputs: {
+          ANGLE: { shadow: { type: "math_number", fields: { NUM: 15 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_turn_left",
+        inputs: {
+          ANGLE: { shadow: { type: "math_number", fields: { NUM: 15 } } },
+        },
+      },
       { kind: "block", type: "logoup_draw" },
       { kind: "block", type: "logoup_done" },
       { kind: "block", type: "logoup_fill" },
-      { kind: "block", type: "logoup_width" },
+      {
+        kind: "block",
+        type: "logoup_width",
+        inputs: {
+          WIDTH: { shadow: { type: "math_number", fields: { NUM: 1 } } },
+        },
+      },
       { kind: "block", type: "logoup_clear" },
       { kind: "block", type: "logoup_home" },
       { kind: "block", type: "logoup_erase" },
@@ -228,23 +252,139 @@ const LOGOUP_SPECIFIC_CATEGORIES = [
     name: "🧩 平面构件",
     colour: LOGOUP_COLORS.COMPONENTS_2D,
     contents: [
-      { kind: "block", type: "logoup_rect" },
-      { kind: "block", type: "logoup_square" },
-      { kind: "block", type: "logoup_rounded_rect" },
-      { kind: "block", type: "logoup_rounded_square" },
-      { kind: "block", type: "logoup_circle" },
-      { kind: "block", type: "logoup_ellipse" },
-      { kind: "block", type: "logoup_egg" },
-      { kind: "block", type: "logoup_polygon" },
-      { kind: "block", type: "logoup_star" },
-      { kind: "block", type: "logoup_five_star" },
-      { kind: "block", type: "logoup_six_star" },
-      { kind: "block", type: "logoup_four_star" },
-      { kind: "block", type: "logoup_arc" },
-      { kind: "block", type: "logoup_line_len" },
-      { kind: "block", type: "logoup_arc_to" },
-      { kind: "block", type: "logoup_line_to" },
-      { kind: "block", type: "logoup_spirograph" },
+      {
+        kind: "block",
+        type: "logoup_rect",
+        inputs: {
+          LENGTH: { shadow: { type: "math_number", fields: { NUM: 15 } } },
+          WIDTH: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_square",
+        inputs: {
+          SIZE: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_rounded_rect",
+        inputs: {
+          LENGTH: { shadow: { type: "math_number", fields: { NUM: 15 } } },
+          WIDTH: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+          RADIUS: { shadow: { type: "math_number", fields: { NUM: 2 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_rounded_square",
+        inputs: {
+          SIZE: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+          RADIUS: { shadow: { type: "math_number", fields: { NUM: 2 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_circle",
+        inputs: {
+          RADIUS: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_ellipse",
+        inputs: {
+          A: { shadow: { type: "math_number", fields: { NUM: 12 } } },
+          B: { shadow: { type: "math_number", fields: { NUM: 9 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_egg",
+        inputs: {
+          RX: { shadow: { type: "math_number", fields: { NUM: 12 } } },
+          RY: { shadow: { type: "math_number", fields: { NUM: 18 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_polygon",
+        inputs: {
+          SIDES: { shadow: { type: "math_number", fields: { NUM: 6 } } },
+          RADIUS: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_star",
+        inputs: {
+          POINTS: { shadow: { type: "math_number", fields: { NUM: 4 } } },
+          RADIUS: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_five_star",
+        inputs: {
+          RADIUS: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_six_star",
+        inputs: {
+          RADIUS: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_four_star",
+        inputs: {
+          RADIUS: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_arc",
+        inputs: {
+          RADIUS: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+          ANGLE: { shadow: { type: "math_number", fields: { NUM: 60 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_line_len",
+        inputs: {
+          LENGTH: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_arc_to",
+        inputs: {
+          X: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+          Y: { shadow: { type: "math_number", fields: { NUM: 15 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_line_to",
+        inputs: {
+          X: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+          Y: { shadow: { type: "math_number", fields: { NUM: 20 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_spirograph",
+        inputs: {
+          R: { shadow: { type: "math_number", fields: { NUM: 15 } } },
+          r: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+          d: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+          ANGLE: { shadow: { type: "math_number", fields: { NUM: 1080 } } },
+        },
+      },
     ],
   },
   {
@@ -252,19 +392,70 @@ const LOGOUP_SPECIFIC_CATEGORIES = [
     name: "🚀 三维绘图",
     colour: LOGOUP_COLORS.DRAWING_3D,
     contents: [
-      { kind: "block", type: "logoup_up" },
+      {
+        kind: "block",
+        type: "logoup_up",
+        inputs: {
+          DISTANCE: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+        },
+      },
       { kind: "block", type: "logoup_body" },
       { kind: "block", type: "logoup_done_3d" },
       { kind: "block", type: "logoup_reset" },
       { kind: "block", type: "logoup_color" },
-      { kind: "block", type: "logoup_scale" },
-      { kind: "block", type: "logoup_yaw" },
-      { kind: "block", type: "logoup_pitch" },
-      { kind: "block", type: "logoup_roll" },
-      { kind: "block", type: "logoup_jump" },
+      {
+        kind: "block",
+        type: "logoup_scale",
+        inputs: {
+          FACTOR: { shadow: { type: "math_number", fields: { NUM: 1.5 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_yaw",
+        inputs: {
+          ANGLE: { shadow: { type: "math_number", fields: { NUM: 15 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_pitch",
+        inputs: {
+          ANGLE: { shadow: { type: "math_number", fields: { NUM: 15 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_roll",
+        inputs: {
+          ANGLE: { shadow: { type: "math_number", fields: { NUM: 15 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_jump",
+        inputs: {
+          DISTANCE: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+        },
+      },
       { kind: "block", type: "logoup_link" },
-      { kind: "block", type: "logoup_move" },
-      { kind: "block", type: "logoup_shift" },
+      {
+        kind: "block",
+        type: "logoup_move",
+        inputs: {
+          DX: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+          DY: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+          DZ: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_shift",
+        inputs: {
+          DX: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+          DY: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+        },
+      },
       { kind: "block", type: "logoup_subtract" },
     ],
   },
@@ -273,26 +464,150 @@ const LOGOUP_SPECIFIC_CATEGORIES = [
     name: "🛰️ 三维进阶",
     colour: LOGOUP_COLORS.ADVANCED_3D,
     contents: [
-      { kind: "block", type: "logoup_extrude" },
-      { kind: "block", type: "logoup_cextrude" },
-      { kind: "block", type: "logoup_pyramid" },
-      { kind: "block", type: "logoup_cave" },
-      { kind: "block", type: "logoup_moveto" },
-      { kind: "block", type: "logoup_movexto" },
-      { kind: "block", type: "logoup_moveyto" },
-      { kind: "block", type: "logoup_movezto" },
-      { kind: "block", type: "logoup_yawto" },
-      { kind: "block", type: "logoup_pitchto" },
-      { kind: "block", type: "logoup_rollto" },
-      { kind: "block", type: "logoup_scalex" },
-      { kind: "block", type: "logoup_scaley" },
-      { kind: "block", type: "logoup_normal" },
-      { kind: "block", type: "logoup_normalto" },
-      { kind: "block", type: "logoup_rotatex" },
-      { kind: "block", type: "logoup_rotatey" },
-      { kind: "block", type: "logoup_rotatez" },
-      { kind: "block", type: "logoup_warpx" },
-      { kind: "block", type: "logoup_warpy" },
+      {
+        kind: "block",
+        type: "logoup_extrude",
+        inputs: {
+          HEIGHT: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_cextrude",
+        inputs: {
+          HEIGHT: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_pyramid",
+        inputs: {
+          HEIGHT: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_cave",
+        inputs: {
+          DEPTH: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_moveto",
+        inputs: {
+          X: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+          Y: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+          Z: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_movexto",
+        inputs: {
+          X: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_moveyto",
+        inputs: {
+          Y: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_movezto",
+        inputs: {
+          Z: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_yawto",
+        inputs: {
+          ANGLE: { shadow: { type: "math_number", fields: { NUM: 15 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_pitchto",
+        inputs: {
+          ANGLE: { shadow: { type: "math_number", fields: { NUM: 15 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_rollto",
+        inputs: {
+          ANGLE: { shadow: { type: "math_number", fields: { NUM: 15 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_scalex",
+        inputs: {
+          FACTOR: { shadow: { type: "math_number", fields: { NUM: 1.5 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_scaley",
+        inputs: {
+          FACTOR: { shadow: { type: "math_number", fields: { NUM: 1.5 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_normal",
+        inputs: {
+          DX: { shadow: { type: "math_number", fields: { NUM: 15 } } },
+          DY: { shadow: { type: "math_number", fields: { NUM: 15 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_normalto",
+        inputs: {
+          NX: { shadow: { type: "math_number", fields: { NUM: 15 } } },
+          NY: { shadow: { type: "math_number", fields: { NUM: 15 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_rotatex",
+        inputs: {
+          ANGLE: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_rotatey",
+        inputs: {
+          ANGLE: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_rotatez",
+        inputs: {
+          ANGLE: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_warpx",
+        inputs: {
+          ANGLE: { shadow: { type: "math_number", fields: { NUM: 50 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_warpy",
+        inputs: {
+          ANGLE: { shadow: { type: "math_number", fields: { NUM: 50 } } },
+        },
+      },
     ],
   },
   {
@@ -300,12 +615,56 @@ const LOGOUP_SPECIFIC_CATEGORIES = [
     name: "🧱 三维构件",
     colour: LOGOUP_COLORS.COMPONENTS_3D,
     contents: [
-      { kind: "block", type: "logoup_box" },
-      { kind: "block", type: "logoup_cylinder" },
-      { kind: "block", type: "logoup_sphere" },
-      { kind: "block", type: "logoup_ellipsoid" },
-      { kind: "block", type: "logoup_cone" },
-      { kind: "block", type: "logoup_pyramid_solid" },
+      {
+        kind: "block",
+        type: "logoup_box",
+        inputs: {
+          LENGTH: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+          WIDTH: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+          HEIGHT: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_cylinder",
+        inputs: {
+          RADIUS: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+          HEIGHT: { shadow: { type: "math_number", fields: { NUM: 15 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_sphere",
+        inputs: {
+          RADIUS: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_ellipsoid",
+        inputs: {
+          RX: { shadow: { type: "math_number", fields: { NUM: 15 } } },
+          RY: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+          RZ: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_cone",
+        inputs: {
+          RADIUS: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+          HEIGHT: { shadow: { type: "math_number", fields: { NUM: 15 } } },
+        },
+      },
+      {
+        kind: "block",
+        type: "logoup_pyramid_solid",
+        inputs: {
+          SIDES: { shadow: { type: "math_number", fields: { NUM: 3 } } },
+          RADIUS: { shadow: { type: "math_number", fields: { NUM: 10 } } },
+          HEIGHT: { shadow: { type: "math_number", fields: { NUM: 15 } } },
+        },
+      },
       {
         kind: "block",
         type: "logoup_torus",

@@ -559,6 +559,22 @@ function parseLogoUpStatement(
   addBlock: (b: ParsedBlockDef) => void,
   getCurrentList: () => ParsedBlockDef[]
 ): boolean {
+  const getValDef = (argStr: string | undefined, defaultNum: number): any => {
+    if (!argStr || argStr.trim() === "") {
+      return { type: "math_number", fields: { NUM: defaultNum } };
+    }
+    const s = argStr.trim();
+    const parsed = parseExprToBlockDef(s, "logoup");
+    if (parsed) {
+      return parsed;
+    }
+    const n = Number(s);
+    return {
+      type: "math_number",
+      fields: { NUM: isNaN(n) ? defaultNum : n },
+    };
+  };
+
   if (parseSharedControlStatement(trimmed, indent, stack, addBlock, getCurrentList, "logoup")) {
     return true;
   }
@@ -580,10 +596,11 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(boxCall.argsStr);
     addBlock({
       type: "logoup_box",
-      fields: {
-        LENGTH: Number(args[0]) || 20,
-        WIDTH: Number(args[1]) || 20,
-        HEIGHT: Number(args[2]) || 10,
+      fields: {},
+      inputs: {
+        LENGTH: getValDef(args[0], 20),
+        WIDTH: getValDef(args[1], 20),
+        HEIGHT: getValDef(args[2], 10),
       },
     });
     return true;
@@ -595,9 +612,10 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(cylCall.argsStr);
     addBlock({
       type: "logoup_cylinder",
-      fields: {
-        RADIUS: Number(args[0]) || 10,
-        HEIGHT: Number(args[1]) || 20,
+      fields: {},
+      inputs: {
+        RADIUS: getValDef(args[0], 10),
+        HEIGHT: getValDef(args[1], 20),
       },
     });
     return true;
@@ -609,9 +627,10 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(coneCall.argsStr);
     addBlock({
       type: "logoup_cone",
-      fields: {
-        RADIUS: Number(args[0]) || 10,
-        HEIGHT: Number(args[1]) || 15,
+      fields: {},
+      inputs: {
+        RADIUS: getValDef(args[0], 10),
+        HEIGHT: getValDef(args[1], 15),
       },
     });
     return true;
@@ -623,7 +642,10 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(sphCall.argsStr);
     addBlock({
       type: "logoup_sphere",
-      fields: { RADIUS: Number(args[0]) || 10 },
+      fields: {},
+      inputs: {
+        RADIUS: getValDef(args[0], 10),
+      },
     });
     return true;
   }
@@ -634,10 +656,11 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(ellipsoidCall.argsStr);
     addBlock({
       type: "logoup_ellipsoid",
-      fields: {
-        RX: Number(args[0]) || 15,
-        RY: Number(args[1]) || 10,
-        RZ: Number(args[2]) || 10,
+      fields: {},
+      inputs: {
+        RX: getValDef(args[0], 15),
+        RY: getValDef(args[1], 10),
+        RZ: getValDef(args[2], 10),
       },
     });
     return true;
@@ -649,27 +672,26 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(pyrSolidCall.argsStr);
     addBlock({
       type: "logoup_pyramid_solid",
-      fields: {
-        SIDES: Number(args[0]) || 4,
-        RADIUS: Number(args[1]) || 15,
-        HEIGHT: Number(args[2]) || 25,
+      fields: {},
+      inputs: {
+        SIDES: getValDef(args[0], 4),
+        RADIUS: getValDef(args[1], 15),
+        HEIGHT: getValDef(args[2], 25),
       },
     });
     return true;
   }
 
-  // torus(r1, r2) -> 注意 logoup_torus 使用 ValueInput (MAJOR_RADIUS, MINOR_RADIUS)
+  // torus(r1, r2)
   const torusCall = extractLogoUpCall(trimmed, "torus");
   if (torusCall) {
     const args = splitTopLevelArgs(torusCall.argsStr);
-    const r1Def = parseExprToBlockDef(args[0] || "10") || { type: "math_number", fields: { NUM: 10 } };
-    const r2Def = parseExprToBlockDef(args[1] || "4") || { type: "math_number", fields: { NUM: 4 } };
     addBlock({
       type: "logoup_torus",
       fields: {},
       inputs: {
-        MAJOR_RADIUS: r1Def,
-        MINOR_RADIUS: r2Def,
+        MAJOR_RADIUS: getValDef(args[0], 10),
+        MINOR_RADIUS: getValDef(args[1], 4),
       },
     });
     return true;
@@ -681,9 +703,10 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(rectCall.argsStr);
     addBlock({
       type: "logoup_rect",
-      fields: {
-        LENGTH: Number(args[0]) || 20,
-        WIDTH: Number(args[1]) || 20,
+      fields: {},
+      inputs: {
+        LENGTH: getValDef(args[0], 20),
+        WIDTH: getValDef(args[1], 20),
       },
     });
     return true;
@@ -695,7 +718,10 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(sqCall.argsStr);
     addBlock({
       type: "logoup_square",
-      fields: { SIZE: Number(args[0]) || 20 },
+      fields: {},
+      inputs: {
+        SIZE: getValDef(args[0], 20),
+      },
     });
     return true;
   }
@@ -706,10 +732,11 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(rRectCall.argsStr);
     addBlock({
       type: "logoup_rounded_rect",
-      fields: {
-        LENGTH: Number(args[0]) || 30,
-        WIDTH: Number(args[1]) || 20,
-        RADIUS: Number(args[2]) || 4,
+      fields: {},
+      inputs: {
+        LENGTH: getValDef(args[0], 30),
+        WIDTH: getValDef(args[1], 20),
+        RADIUS: getValDef(args[2], 4),
       },
     });
     return true;
@@ -721,9 +748,10 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(rSqCall.argsStr);
     addBlock({
       type: "logoup_rounded_square",
-      fields: {
-        SIZE: Number(args[0]) || 20,
-        RADIUS: Number(args[1]) || 3,
+      fields: {},
+      inputs: {
+        SIZE: getValDef(args[0], 20),
+        RADIUS: getValDef(args[1], 3),
       },
     });
     return true;
@@ -737,15 +765,19 @@ function parseLogoUpStatement(
     if (arcCommentMatch) {
       addBlock({
         type: "logoup_arc",
-        fields: {
-          RADIUS: Number(args[0]) || 10,
-          ANGLE: Number(arcCommentMatch[1]) || 90,
+        fields: {},
+        inputs: {
+          RADIUS: getValDef(args[0], 10),
+          ANGLE: getValDef(arcCommentMatch[1], 90),
         },
       });
     } else {
       addBlock({
         type: "logoup_circle",
-        fields: { RADIUS: Number(args[0]) || 10 },
+        fields: {},
+        inputs: {
+          RADIUS: getValDef(args[0], 10),
+        },
       });
     }
     return true;
@@ -757,9 +789,10 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(ellCall.argsStr);
     addBlock({
       type: "logoup_ellipse",
-      fields: {
-        A: Number(args[0]) || 20,
-        B: Number(args[1]) || 10,
+      fields: {},
+      inputs: {
+        A: getValDef(args[0], 20),
+        B: getValDef(args[1], 10),
       },
     });
     return true;
@@ -771,9 +804,10 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(eggCall.argsStr);
     addBlock({
       type: "logoup_egg",
-      fields: {
-        RX: Number(args[0]) || 12,
-        RY: Number(args[1]) || 18,
+      fields: {},
+      inputs: {
+        RX: getValDef(args[0], 12),
+        RY: getValDef(args[1], 18),
       },
     });
     return true;
@@ -785,9 +819,10 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(polyCall.argsStr);
     addBlock({
       type: "logoup_polygon",
-      fields: {
-        SIDES: Number(args[0]) || 6,
-        RADIUS: Number(args[1]) || 15,
+      fields: {},
+      inputs: {
+        SIDES: getValDef(args[0], 6),
+        RADIUS: getValDef(args[1], 15),
       },
     });
     return true;
@@ -799,9 +834,10 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(starCall.argsStr);
     addBlock({
       type: "logoup_star",
-      fields: {
-        POINTS: Number(args[0]) || 5,
-        RADIUS: Number(args[1]) || 15,
+      fields: {},
+      inputs: {
+        POINTS: getValDef(args[0], 5),
+        RADIUS: getValDef(args[1], 15),
       },
     });
     return true;
@@ -813,7 +849,10 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(fStarCall.argsStr);
     addBlock({
       type: "logoup_five_star",
-      fields: { RADIUS: Number(args[0]) || 15 },
+      fields: {},
+      inputs: {
+        RADIUS: getValDef(args[0], 15),
+      },
     });
     return true;
   }
@@ -824,7 +863,10 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(sStarCall.argsStr);
     addBlock({
       type: "logoup_six_star",
-      fields: { RADIUS: Number(args[0]) || 15 },
+      fields: {},
+      inputs: {
+        RADIUS: getValDef(args[0], 15),
+      },
     });
     return true;
   }
@@ -835,7 +877,10 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(fourStarCall.argsStr);
     addBlock({
       type: "logoup_four_star",
-      fields: { RADIUS: Number(args[0]) || 15 },
+      fields: {},
+      inputs: {
+        RADIUS: getValDef(args[0], 15),
+      },
     });
     return true;
   }
@@ -846,11 +891,12 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(spiroCall.argsStr);
     addBlock({
       type: "logoup_spirograph",
-      fields: {
-        R: Number(args[0]) || 20,
-        r: Number(args[1]) || 8,
-        d: Number(args[2]) || 6,
-        ANGLE: Number(args[3]) || 360,
+      fields: {},
+      inputs: {
+        R: getValDef(args[0], 20),
+        r: getValDef(args[1], 8),
+        d: getValDef(args[2], 6),
+        ANGLE: getValDef(args[3], 360),
       },
     });
     return true;
@@ -862,7 +908,10 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(upCall.argsStr);
     addBlock({
       type: "logoup_up",
-      fields: { DISTANCE: Number(args[0]) ?? 10 },
+      fields: {},
+      inputs: {
+        DISTANCE: getValDef(args[0], 10),
+      },
     });
     return true;
   }
@@ -871,7 +920,10 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(downCall.argsStr);
     addBlock({
       type: "logoup_up",
-      fields: { DISTANCE: -(Number(args[0]) || 10) },
+      fields: {},
+      inputs: {
+        DISTANCE: getValDef(`-(${args[0] || "10"})`, -10),
+      },
     });
     return true;
   }
@@ -882,7 +934,10 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(extrudeCall.argsStr);
     addBlock({
       type: "logoup_extrude",
-      fields: { HEIGHT: Number(args[0]) || 10 },
+      fields: {},
+      inputs: {
+        HEIGHT: getValDef(args[0], 10),
+      },
     });
     return true;
   }
@@ -893,7 +948,10 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(cextrudeCall.argsStr);
     addBlock({
       type: "logoup_cextrude",
-      fields: { HEIGHT: Number(args[0]) || 10 },
+      fields: {},
+      inputs: {
+        HEIGHT: getValDef(args[0], 10),
+      },
     });
     return true;
   }
@@ -904,7 +962,10 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(pyrCall.argsStr);
     addBlock({
       type: "logoup_pyramid",
-      fields: { HEIGHT: Number(args[0]) || 15 },
+      fields: {},
+      inputs: {
+        HEIGHT: getValDef(args[0], 15),
+      },
     });
     return true;
   }
@@ -915,7 +976,10 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(caveCall.argsStr);
     addBlock({
       type: "logoup_cave",
-      fields: { DEPTH: Number(args[0]) || 5 },
+      fields: {},
+      inputs: {
+        DEPTH: getValDef(args[0], 5),
+      },
     });
     return true;
   }
@@ -955,7 +1019,10 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(scaleCall.argsStr);
     addBlock({
       type: "logoup_scale",
-      fields: { FACTOR: Number(args[0]) || 1.5 },
+      fields: {},
+      inputs: {
+        FACTOR: getValDef(args[0], 1.5),
+      },
     });
     return true;
   }
@@ -966,7 +1033,10 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(yawCall.argsStr);
     addBlock({
       type: "logoup_yaw",
-      fields: { ANGLE: Number(args[0]) ?? 45 },
+      fields: {},
+      inputs: {
+        ANGLE: getValDef(args[0], 45),
+      },
     });
     return true;
   }
@@ -975,7 +1045,10 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(pitchCall.argsStr);
     addBlock({
       type: "logoup_pitch",
-      fields: { ANGLE: Number(args[0]) ?? 45 },
+      fields: {},
+      inputs: {
+        ANGLE: getValDef(args[0], 45),
+      },
     });
     return true;
   }
@@ -984,7 +1057,10 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(rollCall.argsStr);
     addBlock({
       type: "logoup_roll",
-      fields: { ANGLE: Number(args[0]) ?? 45 },
+      fields: {},
+      inputs: {
+        ANGLE: getValDef(args[0], 45),
+      },
     });
     return true;
   }
@@ -995,7 +1071,10 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(jumpCall.argsStr);
     addBlock({
       type: "logoup_jump",
-      fields: { DISTANCE: Number(args[0]) ?? 10 },
+      fields: {},
+      inputs: {
+        DISTANCE: getValDef(args[0], 10),
+      },
     });
     return true;
   }
@@ -1006,10 +1085,11 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(moveCall.argsStr);
     addBlock({
       type: "logoup_move",
-      fields: {
-        DX: Number(args[0]) || 0,
-        DY: Number(args[1]) || 0,
-        DZ: Number(args[2]) || 0,
+      fields: {},
+      inputs: {
+        DX: getValDef(args[0], 0),
+        DY: getValDef(args[1], 0),
+        DZ: getValDef(args[2], 0),
       },
     });
     return true;
@@ -1021,9 +1101,10 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(shiftCall.argsStr);
     addBlock({
       type: "logoup_shift",
-      fields: {
-        DX: Number(args[0]) || 0,
-        DY: Number(args[1]) || 0,
+      fields: {},
+      inputs: {
+        DX: getValDef(args[0], 0),
+        DY: getValDef(args[1], 0),
       },
     });
     return true;
@@ -1047,15 +1128,19 @@ function parseLogoUpStatement(
     if (args[0]?.trim() === "getx()" && args[1]?.trim() === "gety()") {
       addBlock({
         type: "logoup_movezto",
-        fields: { Z: Number(args[2]) || 0 },
+        fields: {},
+        inputs: {
+          Z: getValDef(args[2], 0),
+        },
       });
     } else {
       addBlock({
         type: "logoup_moveto",
-        fields: {
-          X: Number(args[0]) || 0,
-          Y: Number(args[1]) || 0,
-          Z: Number(args[2]) || 0,
+        fields: {},
+        inputs: {
+          X: getValDef(args[0], 0),
+          Y: getValDef(args[1], 0),
+          Z: getValDef(args[2], 0),
         },
       });
     }
@@ -1071,7 +1156,10 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(goCall.argsStr);
     addBlock({
       type: "logoup_go",
-      fields: { DISTANCE: Number(args[0]) ?? 20 },
+      fields: {},
+      inputs: {
+        DISTANCE: getValDef(args[0], 20),
+      },
     });
     return true;
   }
@@ -1080,7 +1168,10 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(bkCall.argsStr);
     addBlock({
       type: "logoup_go",
-      fields: { DISTANCE: -(Number(args[0]) || 20) },
+      fields: {},
+      inputs: {
+        DISTANCE: getValDef(`-(${args[0] || "20"})`, -20),
+      },
     });
     return true;
   }
@@ -1091,7 +1182,10 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(turnCall.argsStr);
     addBlock({
       type: "logoup_turn",
-      fields: { ANGLE: Number(args[0]) ?? 90 },
+      fields: {},
+      inputs: {
+        ANGLE: getValDef(args[0], 90),
+      },
     });
     return true;
   }
@@ -1102,7 +1196,10 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(turnLCall.argsStr);
     addBlock({
       type: "logoup_turn_left",
-      fields: { ANGLE: Number(args[0]) ?? 90 },
+      fields: {},
+      inputs: {
+        ANGLE: getValDef(args[0], 90),
+      },
     });
     return true;
   }
@@ -1150,7 +1247,10 @@ function parseLogoUpStatement(
     const args = splitTopLevelArgs(widthCall.argsStr);
     addBlock({
       type: "logoup_width",
-      fields: { WIDTH: Number(args[0]) || 2 },
+      fields: {},
+      inputs: {
+        WIDTH: getValDef(args[0], 2),
+      },
     });
     return true;
   }

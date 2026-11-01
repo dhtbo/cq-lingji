@@ -3,47 +3,48 @@ import { LOGOUP_COLORS } from "../types";
 
 /**
  * LogoUp 3D 平面绘图积木 (Plane Drawing)
+ * 支持通过 ValueInput 接入变量、数学计算或数值阴影块
  */
 export function registerLogoUpDrawing2DBlocks() {
   // 1. 向前移动 (GO)
   Blockly.Blocks["logoup_go"] = {
     init: function () {
-      this.appendDummyInput()
-        .appendField("向前移动 (GO)")
-        .appendField(new Blockly.FieldNumber(10), "DISTANCE")
-        .appendField("毫米");
+      this.appendDummyInput().appendField("向前移动 (GO)");
+      this.appendValueInput("DISTANCE").setCheck(null).appendField("距离");
+      this.appendDummyInput().appendField("毫米");
+      this.setInputsInline(true);
       this.setPreviousStatement(true, null);
       this.setNextStatement(true, null);
       this.setColour(LOGOUP_COLORS.DRAWING_2D);
-      this.setTooltip("在当前草平面内沿前进方向移动指定距离");
+      this.setTooltip("在当前草平面内沿前进方向移动指定距离 (支持变量或数值)");
     },
   };
 
   // 2. 顺时针旋转 (TURN)
   Blockly.Blocks["logoup_turn"] = {
     init: function () {
-      this.appendDummyInput()
-        .appendField("顺时针旋转 (TURN) ↷")
-        .appendField(new Blockly.FieldNumber(15, -360, 360), "ANGLE")
-        .appendField("度");
+      this.appendDummyInput().appendField("顺时针旋转 (TURN) ↷");
+      this.appendValueInput("ANGLE").setCheck(null).appendField("偏转");
+      this.appendDummyInput().appendField("度");
+      this.setInputsInline(true);
       this.setPreviousStatement(true, null);
       this.setNextStatement(true, null);
       this.setColour(LOGOUP_COLORS.DRAWING_2D);
-      this.setTooltip("在当前草平面内顺时针偏转指定角度");
+      this.setTooltip("在当前草平面内顺时针偏转指定角度 (支持变量或数值)");
     },
   };
 
   // 3. 逆时针旋转 (TURNLEFT)
   Blockly.Blocks["logoup_turn_left"] = {
     init: function () {
-      this.appendDummyInput()
-        .appendField("逆时针旋转 (TURNLEFT) ↺")
-        .appendField(new Blockly.FieldNumber(15, -360, 360), "ANGLE")
-        .appendField("度");
+      this.appendDummyInput().appendField("逆时针旋转 (TURNLEFT) ↺");
+      this.appendValueInput("ANGLE").setCheck(null).appendField("偏转");
+      this.appendDummyInput().appendField("度");
+      this.setInputsInline(true);
       this.setPreviousStatement(true, null);
       this.setNextStatement(true, null);
       this.setColour(LOGOUP_COLORS.DRAWING_2D);
-      this.setTooltip("在当前草平面内逆时针偏转指定角度");
+      this.setTooltip("在当前草平面内逆时针偏转指定角度 (支持变量或数值)");
     },
   };
 
@@ -86,14 +87,14 @@ export function registerLogoUpDrawing2DBlocks() {
   // 7. 笔画宽度 (WIDTH)
   Blockly.Blocks["logoup_width"] = {
     init: function () {
-      this.appendDummyInput()
-        .appendField("笔画宽度 (WIDTH)")
-        .appendField(new Blockly.FieldNumber(1, 0.1, 100), "WIDTH")
-        .appendField("毫米");
+      this.appendDummyInput().appendField("笔画宽度 (WIDTH)");
+      this.appendValueInput("WIDTH").setCheck(null).appendField("线宽");
+      this.appendDummyInput().appendField("毫米");
+      this.setInputsInline(true);
       this.setPreviousStatement(true, null);
       this.setNextStatement(true, null);
       this.setColour(LOGOUP_COLORS.DRAWING_2D);
-      this.setTooltip("设置绘图笔画线宽");
+      this.setTooltip("设置绘图笔画线宽 (支持变量或数值)");
     },
   };
 
